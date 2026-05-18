@@ -710,7 +710,7 @@ private:
               "    var fold = SinOsc.kr(" + slowB + ").range(0.72, 1.18);\n"
               "    var tone = SinOsc.ar((" + base + " * [0.5, 1.0] * drift * [1, fold]).clip(" + low + ", " + high + "), 0, [0.13, 0.10]).sum;\n"
               "    var air = BPF.ar(PinkNoise.ar(0.018), LFNoise1.kr(" + slowA + ").range(" + low + ", " + high + "), 0.030);\n"
-              "    var sig = Pan2.ar((tone + air) * 0.28, SinOsc.kr(" + slowB + ").range(-0.32, 0.32));\n";
+              "    var sig = Pan2.ar((tone + air) * 0.18, SinOsc.kr(" + slowB + ").range(-0.32, 0.32));\n";
         }
         else if (role == "sub")
         {
@@ -719,7 +719,7 @@ private:
               "    var trig = clock * Demand.kr(clock, 0, pat);\n"
               "    var env = Decay2.kr(trig, 0.004, 0.18);\n"
               "    var pitch = Demand.kr(trig, 0, Dseq([0,0,7,0, 10,7,0,-5], inf));\n"
-              "    var sig = SinOsc.ar((" + base + " * (2 ** (pitch / 12))).clip(" + low + ", " + high + ")) * env * 0.42;\n";
+              "    var sig = SinOsc.ar((" + base + " * (2 ** (pitch / 12))).clip(" + low + ", " + high + ")) * env * 0.30;\n";
         }
         else if (role == "pulse")
         {
@@ -727,7 +727,7 @@ private:
               "    var pat = Dseq([1,0,1,0, 1,1,0,0, 1,0,0,1, 0,1,0,0], inf);\n"
               "    var trig = clock * Demand.kr(clock, 0, pat);\n"
               "    var env = Decay2.kr(trig, 0.002, 0.09);\n"
-              "    var sig = RLPF.ar(VarSaw.ar(" + base + " * [0.5, 1.0], 0, 0.35).sum, " + base + " * (1.4 + env * 5), 0.22) * env * 0.24;\n";
+              "    var sig = RLPF.ar(VarSaw.ar(" + base + " * [0.5, 1.0], 0, 0.30).sum, " + base + " * (1.4 + env * 5), 0.26) * env * 0.18;\n";
         }
         else if (role == "body")
         {
@@ -735,8 +735,8 @@ private:
               "    var pat = Dseq([1,0,0,1, 1,0,1,0, 0,1,0,0, 1,0,1,0], inf);\n"
               "    var trig = clock * Demand.kr(clock, 0, pat);\n"
               "    var env = Decay2.kr(trig, 0.003, 0.13);\n"
-              "    var hit = BPF.ar(WhiteNoise.ar(0.45), " + base + " * Demand.kr(trig, 0, Dseq([0.9, 1.1, 1.4, 0.75], inf)), 0.18);\n"
-              "    var sig = (hit + SinOsc.ar(" + base + " * 0.5) * env * 0.18) * env * 0.45;\n";
+              "    var hit = BPF.ar(WhiteNoise.ar(0.32), " + base + " * Demand.kr(trig, 0, Dseq([0.9, 1.1, 1.4, 0.75], inf)), 0.20);\n"
+              "    var sig = (hit + SinOsc.ar(" + base + " * 0.5) * env * 0.12) * env * 0.32;\n";
         }
         else if (role == "weave")
         {
@@ -754,7 +754,7 @@ private:
               "    var trig = clock * Demand.kr(clock, 0, pat);\n"
               "    var env = Decay2.kr(trig, 0.002, 0.30);\n"
               "    var freq = Demand.kr(trig, 0, Dseq([1, 1.25, 1.5, 2, 1.75, 1.33], inf)) * " + base + ";\n"
-              "    var sig = Ringz.ar(HPF.ar(WhiteNoise.ar(0.09), " + low + "), freq.clip(" + low + ", " + high + "), 0.20).tanh * env * 0.35;\n";
+              "    var sig = Ringz.ar(HPF.ar(WhiteNoise.ar(0.055), " + low + "), freq.clip(" + low + ", " + high + "), 0.15).tanh * env * 0.22;\n";
         }
         else
         {
@@ -762,12 +762,13 @@ private:
               "    var pat = Dseq([1,0,0,0, 0,0,1,0, 0,1,0,0, 0,0,0,1], inf);\n"
               "    var trig = clock * Demand.kr(clock, 0, pat);\n"
               "    var env = Decay2.kr(trig, 0.010, 0.45);\n"
-              "    var sig = BPF.ar(PinkNoise.ar(0.20), LFNoise2.kr(0.8).range(" + low + ", " + high + "), 0.08) * env * 0.42;\n";
+              "    var sig = BPF.ar(PinkNoise.ar(0.13), LFNoise2.kr(0.8).range(" + low + ", " + high + "), 0.10) * env * 0.28;\n";
         }
 
         script +=
             "    var shaped = HPF.ar(LPF.ar(sig, " + high + "), " + low + ");\n"
-            "    LeakDC.ar(Limiter.ar(shaped ! 2, 0.65, 0.01)) * active * vol;\n"
+            "    var stereo = Splay.ar(shaped, 0.36);\n"
+            "    LeakDC.ar(Limiter.ar(stereo, 0.34, 0.018)) * active * vol * 0.74;\n"
             "}.play;\n"
             ")\n";
         return script;

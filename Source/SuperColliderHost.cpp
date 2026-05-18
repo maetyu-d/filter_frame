@@ -933,6 +933,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "    stereo = if (stereo.size < 2, { [stereo[0], stereo[0]] }, { [stereo[0], stereo[1]] });\n"
                "    stereo = ~wfApplyBand.(key, stereo);\n"
                "    controlled = Balance2.ar(stereo[0], stereo[1], pan) * Lag.kr(\\wfVol.kr(~wfVolumes[key] ? 1), 0.02);\n"
+               "    controlled = LeakDC.ar(Limiter.ar(controlled, 0.42, 0.012));\n"
                "    Out.ar(~wfLaneBusFor.(key), controlled);\n"
                "    Silent.ar(2);\n"
                "};\n"
