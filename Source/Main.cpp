@@ -5850,10 +5850,12 @@ public:
                             bool colourblindSafeEnabled,
                             std::function<void (bool)> colourblindSafeChanged,
                             SuperColliderAudioSettings scAudioSettingsToUse,
+                            juce::String scDiagnosticsToUse,
                             std::function<void (SuperColliderAudioSettings)> scAudioSettingsChanged)
         : onColourblindSafeChanged (std::move (colourblindSafeChanged)),
           onScAudioSettingsChanged (std::move (scAudioSettingsChanged)),
           scAudioSettings (std::move (scAudioSettingsToUse)),
+          scDiagnostics (std::move (scDiagnosticsToUse)),
           selector (manager, 0, 0, 0, 2, false, false, true, false)
     {
         addAndMakeVisible (title);
@@ -5868,6 +5870,7 @@ public:
         addAndMakeVisible (scBufferEditor);
         addAndMakeVisible (scChannelsLabel);
         addAndMakeVisible (scChannelsEditor);
+        addAndMakeVisible (scDiagnosticsLabel);
         addAndMakeVisible (scNote);
         addAndMakeVisible (audioSectionTitle);
         addAndMakeVisible (note);
@@ -5937,6 +5940,7 @@ public:
         scNote.setFont (juce::FontOptions (11.5f));
         scNote.setColour (juce::Label::textColourId, mutedInk());
         scNote.setJustificationType (juce::Justification::centredLeft);
+        refreshScDiagnostics();
 
         exportSectionTitle.setText ("Audio export", juce::dontSendNotification);
         exportSectionTitle.setFont (juce::FontOptions (12.0f, juce::Font::bold));
@@ -6028,6 +6032,7 @@ public:
         numericRow.removeFromLeft (12);
         scChannelsLabel.setBounds (numericRow.removeFromLeft (34).reduced (0, 4));
         scChannelsEditor.setBounds (numericRow.removeFromLeft (42).reduced (0, 3));
+        scDiagnosticsLabel.setBounds (area.removeFromTop (24));
         scNote.setBounds (area.removeFromTop (40));
         area.removeFromTop (14);
         audioSectionTitle.setBounds (area.removeFromTop (22));
@@ -6073,6 +6078,23 @@ private:
         editor.setColour (juce::TextEditor::textColourId, ink());
         editor.setColour (juce::TextEditor::outlineColourId, hairline());
         editor.setColour (juce::TextEditor::focusedOutlineColourId, accentA());
+    }
+
+public:
+    void setScDiagnostics (juce::String diagnostics)
+    {
+        scDiagnostics = std::move (diagnostics);
+        refreshScDiagnostics();
+    }
+
+private:
+    void refreshScDiagnostics()
+    {
+        scDiagnosticsLabel.setText (scDiagnostics.isEmpty() ? "Actual: not reported yet" : "Actual: " + scDiagnostics,
+                                    juce::dontSendNotification);
+        scDiagnosticsLabel.setFont (juce::FontOptions (11.5f, juce::Font::bold));
+        scDiagnosticsLabel.setColour (juce::Label::textColourId, scDiagnostics.isEmpty() ? mutedInk() : accentA().brighter (0.10f));
+        scDiagnosticsLabel.setJustificationType (juce::Justification::centredLeft);
     }
 
     void commitScAudioSettings()
@@ -6124,6 +6146,7 @@ private:
     std::function<void (bool)> onColourblindSafeChanged;
     std::function<void (SuperColliderAudioSettings)> onScAudioSettingsChanged;
     SuperColliderAudioSettings scAudioSettings;
+    juce::String scDiagnostics;
     std::function<void (AudioExportSettings)> onExportSettingsChanged;
     AudioExportSettings exportSettings;
     juce::Label title;
@@ -6138,6 +6161,7 @@ private:
     juce::TextEditor scBufferEditor;
     juce::Label scChannelsLabel;
     juce::TextEditor scChannelsEditor;
+    juce::Label scDiagnosticsLabel;
     juce::Label scNote;
     juce::Label exportSectionTitle;
     juce::Label exportRangeLabel;
@@ -6162,6 +6186,7 @@ public:
                     bool colourblindSafeEnabled,
                     std::function<void (bool)> colourblindSafeChanged,
                     SuperColliderAudioSettings scAudioSettings,
+                    juce::String scDiagnostics,
                     std::function<void (SuperColliderAudioSettings)> scAudioSettingsChanged)
         : DocumentWindow ("Settings", backgroundTop(), DocumentWindow::closeButton)
     {
@@ -6170,9 +6195,16 @@ public:
                                                      colourblindSafeEnabled,
                                                      std::move (colourblindSafeChanged),
                                                      std::move (scAudioSettings),
+                                                     std::move (scDiagnostics),
                                                      std::move (scAudioSettingsChanged)), true);
         setResizable (false, false);
         centreWithSize (590, 680);
+    }
+
+    void setScDiagnostics (const juce::String& diagnostics)
+    {
+        if (auto* audioSettings = dynamic_cast<AudioSettingsComponent*> (getContentComponent()))
+            audioSettings->setScDiagnostics (diagnostics);
     }
 
     void closeButtonPressed() override
@@ -6930,6 +6962,7 @@ public:
             addListener (this, "/wf/frozen");
             addListener (this, "/wf/exported");
             addListener (this, "/wf/exportProgress");
+            addListener (this, "/wf/audio");
         }
         else
             appendLog ("Could not bind visual state OSC port 57142");
@@ -7965,6 +7998,7 @@ public:
                                                                        safeThis->setColourblindSafeMode (shouldUse);
                                                                },
                                                                scAudioSettings,
+                                                               scAudioDiagnostics,
                                                                [safeThis = juce::Component::SafePointer<MainComponent> (this)] (SuperColliderAudioSettings settings)
                                                                {
                                                                    if (safeThis != nullptr)
@@ -8013,6 +8047,9 @@ public:
         requestAudioProjectReset();
         runButton.setButtonText ("Run");
         scAudioSettings = std::move (settings);
+        scAudioDiagnostics = {};
+        if (settingsWindow != nullptr)
+            settingsWindow->setScDiagnostics (scAudioDiagnostics);
         host.setAudioSettings (scAudioSettings);
         invalidatePreparedAudio();
         statusLabel.setText ("SC audio settings changed", juce::dontSendNotification);
@@ -8590,6 +8627,8 @@ private:
     void handleHostLogMessage (const juce::String& message)
     {
         handleSchedulerStateMessage (message);
+        if (message.contains ("WF_AUDIO "))
+            handleAudioDiagnosticsLogMessage (message);
 
         if (pendingCheckId.isEmpty())
             return;
@@ -8622,6 +8661,16 @@ private:
             setCodeCheckStatus ("Error" + (line > 0 ? " line " + juce::String (line) : "") + ": " + errorText.upToFirstOccurrenceOf ("\n", false, false),
                                 accentC());
         }
+    }
+
+    void handleAudioDiagnosticsLogMessage (const juce::String& message)
+    {
+        const auto marker = juce::String ("WF_AUDIO ");
+        const auto markerIndex = message.indexOf (marker);
+        if (markerIndex < 0)
+            return;
+
+        updateScAudioDiagnostics (message.substring (markerIndex + marker.length()).trim());
     }
 
     void handleSchedulerStateMessage (const juce::String& message)
@@ -8675,6 +8724,12 @@ private:
         if (address == "/wf/exportProgress")
         {
             handleExportProgressMessage (message);
+            return;
+        }
+
+        if (address == "/wf/audio")
+        {
+            handleAudioDiagnosticsMessage (message);
             return;
         }
 
@@ -8796,6 +8851,42 @@ private:
                              juce::dontSendNotification);
         if (arrangementViewMode > 0)
             arrangementStrip.setMachine (machine, rateSlider.getValue(), arrangementViewMode == 2, exportInProgress, exportElapsedSeconds, exportTotalSeconds);
+    }
+
+    void handleAudioDiagnosticsMessage (const juce::OSCMessage& message)
+    {
+        if (message.size() < 3)
+            return;
+
+        const auto rate = getOscFloat (message[0]);
+        const auto buffer = message[1].isInt32() ? message[1].getInt32() : juce::roundToInt (getOscFloat (message[1]));
+        const auto outs = message[2].isInt32() ? message[2].getInt32() : juce::roundToInt (getOscFloat (message[2]));
+        auto device = juce::String ("default");
+        if (message.size() > 3 && message[3].isString())
+            device = message[3].getString().trim();
+
+        updateScAudioDiagnostics (formatScAudioDiagnostics (rate, buffer, outs, device));
+    }
+
+    static juce::String formatScAudioDiagnostics (float rate, int buffer, int outs, const juce::String& device)
+    {
+        auto text = juce::String (rate, 1) + " Hz / " + juce::String (buffer) + " samples / " + juce::String (outs) + " outs";
+        if (device.isNotEmpty())
+            text += " / " + device;
+        return text;
+    }
+
+    void updateScAudioDiagnostics (juce::String diagnostics)
+    {
+        diagnostics = diagnostics.trim();
+        if (diagnostics.isEmpty() || diagnostics == scAudioDiagnostics)
+            return;
+
+        scAudioDiagnostics = diagnostics;
+        appendLog ("SC actual audio: " + scAudioDiagnostics);
+        statusLabel.setText ("Audio " + scAudioDiagnostics, juce::dontSendNotification);
+        if (settingsWindow != nullptr)
+            settingsWindow->setScDiagnostics (scAudioDiagnostics);
     }
 
     void handleMeterMessage (const juce::OSCMessage& message)
@@ -12218,6 +12309,7 @@ private:
     WelcomeComponent welcome;
     juce::TextEditor logView;
     juce::String scLog;
+    juce::String scAudioDiagnostics;
     bool logDirty = false;
     double lastLogFlushMs = 0.0;
     bool logVisible = false;

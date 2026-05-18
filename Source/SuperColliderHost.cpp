@@ -800,6 +800,8 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "        ~wfPending.add(func);\n"
                "        s.waitForBoot {\n"
                "            ~wfServerReady = true;\n"
+               "            ~wfJuce.sendMsg('/wf/audio', s.sampleRate.asFloat, s.options.hardwareBufferSize.asInteger, s.options.numOutputBusChannels.asInteger, (s.options.device ? \"default\").asString);\n"
+               "            (\"WF_AUDIO rate=\" ++ s.sampleRate.round(0.1) ++ \" buffer=\" ++ s.options.hardwareBufferSize ++ \" outs=\" ++ s.options.numOutputBusChannels ++ \" device=\" ++ (s.options.device ? \"default\")).postln;\n"
                "            ~wfPending.do { |pending| pending.value };\n"
                "            ~wfPending.clear;\n"
                "        };\n"
