@@ -8720,28 +8720,28 @@ public:
         g.setGradientFill (rainbow);
         g.fillRect (strip);
 
-        auto chrome = getLocalBounds().reduced (16).toFloat();
-        auto console = chrome.removeFromBottom (104.0f);
-        chrome.removeFromBottom (12.0f);
+        auto chrome = getLocalBounds().reduced (18).toFloat();
+        auto rail = chrome.removeFromLeft (172.0f);
+        chrome.removeFromLeft (14.0f);
 
-        juce::ColourGradient consoleFill (juce::Colour (0xff080d11).withAlpha (0.97f), console.getTopLeft(),
-                                          juce::Colour (0xff211820).withAlpha (0.97f), console.getBottomRight(), false);
-        consoleFill.addColour (0.45, juce::Colour (0xff111923).withAlpha (0.97f));
-        g.setGradientFill (consoleFill);
-        g.fillRoundedRectangle (console, 18.0f);
+        juce::ColourGradient railFill (juce::Colour (0xff0b1014).withAlpha (0.96f), rail.getTopLeft(),
+                                       juce::Colour (0xff1b1820).withAlpha (0.96f), rail.getBottomRight(), false);
+        railFill.addColour (0.48, juce::Colour (0xff111922).withAlpha (0.96f));
+        g.setGradientFill (railFill);
+        g.fillRoundedRectangle (rail, 16.0f);
         g.setColour (hairline().withAlpha (0.24f));
-        g.drawRoundedRectangle (console.reduced (0.5f), 18.0f, 1.0f);
+        g.drawRoundedRectangle (rail.reduced (0.5f), 16.0f, 1.0f);
 
-        auto consoleAccent = console.reduced (18.0f, 12.0f).removeFromTop (3.0f);
-        juce::ColourGradient consoleLine (accentB().withAlpha (0.88f), consoleAccent.getTopLeft(),
-                                          accentA().withAlpha (0.84f), consoleAccent.getTopRight(), false);
-        consoleLine.addColour (0.66, accentC().withAlpha (0.74f));
-        g.setGradientFill (consoleLine);
-        g.fillRoundedRectangle (consoleAccent, 2.0f);
+        auto railAccent = rail.reduced (13.0f, 12.0f).removeFromTop (3.0f);
+        juce::ColourGradient railLine (accentB().withAlpha (0.86f), railAccent.getTopLeft(),
+                                       accentA().withAlpha (0.82f), railAccent.getTopRight(), false);
+        railLine.addColour (0.62, accentC().withAlpha (0.72f));
+        g.setGradientFill (railLine);
+        g.fillRoundedRectangle (railAccent, 2.0f);
 
         if (shouldShowStateStrip())
         {
-            auto tabs = chrome.removeFromBottom (36.0f);
+            auto tabs = chrome.removeFromTop (36.0f);
             g.setColour (panelFill().withAlpha (0.20f));
             g.fillRoundedRectangle (tabs.reduced (0.0f, 4.0f), 10.0f);
             g.setColour (hairline().withAlpha (0.12f));
@@ -8751,23 +8751,22 @@ public:
 
     void resized() override
     {
-        auto frame = getLocalBounds().reduced (16);
-        auto console = frame.removeFromBottom (104);
-        frame.removeFromBottom (12);
+        auto frame = getLocalBounds().reduced (18);
+        auto rail = frame.removeFromLeft (172);
+        frame.removeFromLeft (14);
         auto area = frame;
 
-        auto consoleInner = console.reduced (18, 14);
-        consoleInner.removeFromTop (6);
-        auto identity = consoleInner.removeFromLeft (178);
-        title.setBounds (identity.removeFromTop (34));
-        projectFileLabel.setBounds (identity.removeFromTop (23).reduced (1, 1));
-        statusLabel.setBounds (identity.removeFromTop (28).reduced (0, 3));
-        consoleInner.removeFromLeft (14);
+        auto railInner = rail.reduced (12, 14);
+        railInner.removeFromTop (8);
+        title.setBounds (railInner.removeFromTop (36));
+        projectFileLabel.setBounds (railInner.removeFromTop (24).reduced (1, 1));
+        statusLabel.setBounds (railInner.removeFromTop (30).reduced (0, 3));
+        railInner.removeFromTop (10);
 
-        auto masterColumn = consoleInner.removeFromLeft (132);
-        masterGainLabel.setBounds (masterColumn.removeFromTop (20).reduced (0, 1));
-        masterGainSlider.setBounds (masterColumn.removeFromTop (34).reduced (0, 3));
-        consoleInner.removeFromLeft (12);
+        auto masterRow = railInner.removeFromTop (34);
+        masterGainLabel.setBounds (masterRow.removeFromLeft (32).reduced (0, 3));
+        masterGainSlider.setBounds (masterRow.reduced (0, 2));
+        railInner.removeFromTop (12);
 
         const auto headerControlWidth = area.getWidth();
         headerCompactLevel = headerControlWidth < 760 ? 2 : (headerControlWidth < 920 ? 1 : 0);
@@ -8778,56 +8777,62 @@ public:
         logButton.setButtonText ("Log");
         updateArrangementButtonText();
 
+        auto railButton = [&railInner] (juce::Button& button, int width = -1)
+        {
+            button.setVisible (true);
+            if (width < 0)
+                button.setBounds (railInner.removeFromTop (36).reduced (0, 3));
+            else
+                button.setBounds (railInner.removeFromLeft (width).reduced (0, 3));
+        };
         auto hideButton = [] (juce::Button& button)
         {
             button.setVisible (false);
             button.setBounds ({});
         };
 
-        auto transport = consoleInner.removeFromLeft (310);
-        auto transportTop = transport.removeFromTop (38);
-        runButton.setVisible (true);
-        runButton.setBounds (transportTop.removeFromLeft (92).reduced (0, 3));
+        railButton (runButton);
         if (filterbankChrome)
             hideButton (stepButton);
         else
-        {
-            stepButton.setVisible (true);
-            stepButton.setBounds (transportTop.removeFromLeft (70).reduced (6, 3));
-        }
+            railButton (stepButton);
+
+        auto stopRow = railInner.removeFromTop (36);
         stopAllButton.setVisible (true);
         panicButton.setVisible (true);
-        stopAllButton.setBounds (transportTop.removeFromLeft (74).reduced (6, 3));
-        panicButton.setBounds (transportTop.removeFromLeft (82).reduced (6, 3));
+        stopAllButton.setBounds (stopRow.removeFromLeft (70).reduced (0, 3));
+        stopRow.removeFromLeft (6);
+        panicButton.setBounds (stopRow.reduced (0, 3));
+        railInner.removeFromTop (12);
 
-        auto transportBottom = transport.removeFromTop (38);
+        auto fileRow = railInner.removeFromTop (36);
         loadProjectButton.setVisible (true);
         saveProjectButton.setVisible (true);
+        loadProjectButton.setBounds (fileRow.removeFromLeft (70).reduced (0, 3));
+        fileRow.removeFromLeft (6);
+        saveProjectButton.setBounds (fileRow.reduced (0, 3));
+
+        auto editRow = railInner.removeFromTop (36);
         undoButton.setVisible (true);
         redoButton.setVisible (true);
-        loadProjectButton.setBounds (transportBottom.removeFromLeft (70).reduced (0, 3));
-        saveProjectButton.setBounds (transportBottom.removeFromLeft (70).reduced (6, 3));
-        undoButton.setBounds (transportBottom.removeFromLeft (70).reduced (6, 3));
-        redoButton.setBounds (transportBottom.removeFromLeft (70).reduced (6, 3));
-        consoleInner.removeFromLeft (14);
+        undoButton.setBounds (editRow.removeFromLeft (70).reduced (0, 3));
+        editRow.removeFromLeft (6);
+        redoButton.setBounds (editRow.reduced (0, 3));
+        railInner.removeFromTop (12);
 
-        auto utility = consoleInner.removeFromLeft (174);
         logButton.setVisible (true);
-        logButton.setBounds (utility.removeFromTop (34).reduced (0, 3));
+        logButton.setBounds (railInner.removeFromTop (34).reduced (0, 3));
         if (filterbankChrome)
             hideButton (arrangementViewButton);
         else
-        {
-            arrangementViewButton.setVisible (true);
-            arrangementViewButton.setBounds (utility.removeFromTop (34).reduced (0, 3));
-        }
+            railButton (arrangementViewButton);
 
         if (! filterbankChrome)
         {
-            auto graphRow = utility.removeFromTop (34);
+            auto graphRow = railInner.removeFromTop (34);
             graphFitButton.setVisible (true);
             graphLayoutButton.setVisible (true);
-            graphFitButton.setBounds (graphRow.removeFromLeft (66).reduced (0, 3));
+            graphFitButton.setBounds (graphRow.removeFromLeft (52).reduced (0, 3));
             graphRow.removeFromLeft (6);
             graphLayoutButton.setBounds (graphRow.reduced (0, 3));
         }
@@ -8836,15 +8841,15 @@ public:
             hideButton (graphFitButton);
             hideButton (graphLayoutButton);
         }
-        consoleInner.removeFromLeft (14);
+        railInner.removeFromTop (12);
 
-        auto structure = consoleInner.removeFromLeft (150);
-        topStateCountLabel.setBounds (structure.removeFromTop (20).reduced (1, 1));
-        auto topCountArea = structure.removeFromTop (32);
+        topStateCountLabel.setBounds (railInner.removeFromTop (20).reduced (1, 1));
+        auto topCountArea = railInner.removeFromTop (32);
         topStateCountMinus.setBounds (topCountArea.removeFromLeft (34).reduced (0, 3));
         topStateCountEditor.setBounds (topCountArea.removeFromLeft (52).reduced (5, 3));
         topStateCountPlus.setBounds (topCountArea.removeFromLeft (34).reduced (0, 3));
-        rateSlider.setBounds (structure.removeFromTop (34).reduced (0, 3));
+        railInner.removeFromTop (8);
+        rateSlider.setBounds (railInner.removeFromTop (34).reduced (0, 3));
 
         const auto horizontalDividerHeight = 8;
         constexpr int compactArrangementHeight = 108;
