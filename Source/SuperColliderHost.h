@@ -99,6 +99,7 @@ private:
                                 double delaySeconds);
     void sendVolumeCommand (const juce::String& laneId, float volume);
     void sendMixCommand (const juce::String& laneId, float volume, float pan);
+    void sendAutomationCommand (const juce::String& laneId, const Lane::Automation& automation);
     void sendBandCommand (const juce::String& laneId, double lowHz, double highHz);
     void sendMasterGainCommand (float gain);
     void sendStopCommand (const juce::String& laneId, double releaseSeconds);
@@ -111,6 +112,7 @@ private:
     void startLogReader();
     void addLog (const juce::String& message);
     void setStatus (const juce::String& status);
+    static juce::String automationExpressionFor (const Lane::Automation& automation);
 
     mutable juce::CriticalSection hostLock;
     std::unique_ptr<juce::ChildProcess> bridgeProcess;

@@ -5345,6 +5345,12 @@ private:
         g.fillEllipse (dot);
         g.setColour (active ? ink().withAlpha (0.92f) : hairline().withAlpha (0.84f));
         g.drawEllipse (dot.expanded (1.0f), active ? 1.5f : 1.0f);
+        if (active)
+        {
+            const auto phase = 0.5f + 0.5f * std::sin (static_cast<float> (juce::Time::getMillisecondCounterHiRes() * 0.006));
+            g.setColour (colour.withAlpha (0.18f + phase * 0.18f));
+            g.drawEllipse (dot.expanded (4.0f + phase * 2.0f), 1.0f);
+        }
     }
 
     void drawSmallMixStrip (juce::Graphics& g, juce::Rectangle<int> area, const juce::String& label, float normalised, const juce::String& value, juce::Colour colour, bool enabled) const
@@ -6738,6 +6744,7 @@ enum class WorkspaceMode
 class WelcomeComponent final : public juce::Component
 {
 public:
+    std::function<void()> onNewProject;
     std::function<void()> onSimpleDemo;
     std::function<void()> onComplexDemo;
     std::function<void()> onContinue;
@@ -6749,6 +6756,7 @@ public:
         addAndMakeVisible (titleLabel);
         addAndMakeVisible (subtitleLabel);
         addAndMakeVisible (recentTitle);
+        addAndMakeVisible (newProjectButton);
         addAndMakeVisible (simpleButton);
         addAndMakeVisible (complexButton);
         addAndMakeVisible (continueButton);
@@ -6769,11 +6777,13 @@ public:
         recentTitle.setColour (juce::Label::textColourId, mutedInk());
         recentTitle.setJustificationType (juce::Justification::centredLeft);
 
+        newProjectButton.setButtonText ("New Project");
         simpleButton.setButtonText ("Simple Demo");
         complexButton.setButtonText ("Complex Demo");
         continueButton.setButtonText ("Continue");
         loadButton.setButtonText ("Load Project");
 
+        newProjectButton.onClick = [this] { if (onNewProject) onNewProject(); };
         simpleButton.onClick = [this] { if (onSimpleDemo) onSimpleDemo(); };
         complexButton.onClick = [this] { if (onComplexDemo) onComplexDemo(); };
         continueButton.onClick = [this] { if (onContinue) onContinue(); };
@@ -6842,14 +6852,16 @@ public:
         panel.removeFromTop (10);
         auto actions = panel.removeFromTop (84);
         auto topActions = actions.removeFromTop (40);
-        complexButton.setBounds (topActions.removeFromLeft (150).reduced (0, 2));
+        newProjectButton.setBounds (topActions.removeFromLeft (150).reduced (0, 2));
         topActions.removeFromLeft (8);
-        simpleButton.setBounds (topActions.removeFromLeft (150).reduced (0, 2));
+        loadButton.setBounds (topActions.removeFromLeft (150).reduced (0, 2));
+        topActions.removeFromLeft (8);
+        complexButton.setBounds (topActions.removeFromLeft (126).reduced (0, 2));
 
         auto secondActions = actions.removeFromTop (40);
-        continueButton.setBounds (secondActions.removeFromLeft (150).reduced (0, 2));
+        simpleButton.setBounds (secondActions.removeFromLeft (150).reduced (0, 2));
         secondActions.removeFromLeft (8);
-        loadButton.setBounds (secondActions.removeFromLeft (150).reduced (0, 2));
+        continueButton.setBounds (secondActions.removeFromLeft (126).reduced (0, 2));
 
         panel.removeFromTop (12);
         recentTitle.setBounds (panel.removeFromTop (24));
@@ -6869,6 +6881,7 @@ private:
     juce::Label titleLabel;
     juce::Label subtitleLabel;
     juce::Label recentTitle;
+    juce::TextButton newProjectButton;
     juce::TextButton simpleButton;
     juce::TextButton complexButton;
     juce::TextButton continueButton;
@@ -8052,6 +8065,11 @@ public:
             refreshControls();
         };
 
+        welcome.onNewProject = [this]
+        {
+            welcome.setVisible (false);
+            newProject (FilterbankDemo::simple);
+        };
         welcome.onSimpleDemo = [this]
         {
             welcome.setVisible (false);
@@ -11015,7 +11033,7 @@ private:
         for (const auto& state : model.states)
         {
             for (const auto& lane : state.lanes)
-                lanes.push_back ({ lane.id, lane.name, lane.script, lane.volume, lane.gain, lane.pan, lane.frozen, lane.freezeStale, lane.frozenAudioPath });
+                lanes.push_back ({ lane.id, lane.name, lane.script, lane.volume, lane.gain, lane.pan, lane.frozen, lane.freezeStale, lane.frozenAudioPath, lane.automations });
 
             if (auto* child = model.childMachine (state.index))
                 collectLaneSnapshots (*child, lanes);

@@ -79,6 +79,7 @@ struct LaneSnapshot
     bool frozen = false;
     bool freezeStale = false;
     juce::String frozenAudioPath;
+    std::vector<Lane::Automation> automations;
 };
 
 struct State

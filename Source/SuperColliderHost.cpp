@@ -305,7 +305,7 @@ void SuperColliderHost::playInBand (Lane& lane, const juce::String& sclangPath, 
 
 bool SuperColliderHost::prepare(Lane& lane, const juce::String& sclangPath)
     {
-        if (prepareData ({ lane.id, lane.name, lane.script, lane.volume, lane.gain, lane.pan, lane.frozen, lane.freezeStale, lane.frozenAudioPath }, sclangPath) < 0)
+        if (prepareData ({ lane.id, lane.name, lane.script, lane.volume, lane.gain, lane.pan, lane.frozen, lane.freezeStale, lane.frozenAudioPath, lane.automations }, sclangPath) < 0)
             return false;
 
         lane.preparedBridge = bridgeGeneration;
@@ -324,6 +324,8 @@ int SuperColliderHost::prepareData(const LaneSnapshot& lane, const juce::String&
         {
             sendLoadFrozenCommand (lane.id, lane.frozenAudioPath);
             sendMixCommand (lane.id, lane.volume * lane.gain, lane.pan);
+            for (const auto& automation : lane.automations)
+                sendAutomationCommand (lane.id, automation);
             addLog ("Loaded frozen " + lane.name);
             setStatus ("Audio ready");
             return bridgeGeneration;
@@ -345,6 +347,8 @@ int SuperColliderHost::prepareData(const LaneSnapshot& lane, const juce::String&
 
         sendLoadCommand (lane.id, scriptFile.getFullPathName());
         sendMixCommand (lane.id, lane.volume * lane.gain, lane.pan);
+        for (const auto& automation : lane.automations)
+            sendAutomationCommand (lane.id, automation);
         addLog ("Loaded " + lane.name);
         setStatus ("Audio ready");
         return bridgeGeneration;
@@ -358,7 +362,7 @@ bool SuperColliderHost::freezeLane (Lane& lane, const juce::String& sclangPath, 
         if (! ensureBridgeRunningLocked (sclangPath))
             return false;
 
-        LaneSnapshot liveSnapshot { lane.id, lane.name, lane.script, lane.volume, lane.gain, lane.pan, false, false, {} };
+        LaneSnapshot liveSnapshot { lane.id, lane.name, lane.script, lane.volume, lane.gain, lane.pan, false, false, {}, lane.automations };
         auto script = injectLaneMetering (liveSnapshot.script, liveSnapshot.id);
         auto scriptFile = makeTempScript (liveSnapshot.id, script);
 
@@ -375,6 +379,8 @@ bool SuperColliderHost::freezeLane (Lane& lane, const juce::String& sclangPath, 
         outputFile.getParentDirectory().createDirectory();
         sendLoadCommand (lane.id, scriptFile.getFullPathName());
         sendMixCommand (lane.id, lane.volume * lane.gain, lane.pan);
+        for (const auto& automation : lane.automations)
+            sendAutomationCommand (lane.id, automation);
         sendFreezeCommand (lane.id, outputFile.getFullPathName(), durationSeconds);
         setStatus ("Freezing " + lane.name);
         addLog ("Freezing " + lane.name);
@@ -811,6 +817,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "~wfPans = IdentityDictionary.new;\n"
                "~wfPrograms = IdentityDictionary.new;\n"
                "~wfFrozenPaths = IdentityDictionary.new;\n"
+               "~wfAutomations = IdentityDictionary.new;\n"
                "~wfFrozenBuffers = IdentityDictionary.new;\n"
                "~wfFrozenBufferPaths = IdentityDictionary.new;\n"
                "~wfLaneBuses = IdentityDictionary.new;\n"
@@ -928,11 +935,17 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "};\n"
                "~wfMetered = { |key, sig|\n"
                "    var stereo = sig.asArray;\n"
-               "    var pan = Lag.kr(\\wfPan.kr(~wfPans[key] ? 0), 0.05).clip(-1, 1);\n"
+               "    var automations = ~wfAutomations[key];\n"
+               "    var meterFunc = if (automations.notNil, { automations[\\meter] }, { nil });\n"
+               "    var panFunc = if (automations.notNil, { automations[\\pan] }, { nil });\n"
+               "    var autoLevel = if (meterFunc.notNil, { meterFunc.value(key).clip(0, 1) }, { 1 });\n"
+               "    var pan = if (panFunc.notNil, { panFunc.value(key).clip(-1, 1) }, { \\wfPan.kr(~wfPans[key] ? 0) });\n"
+               "    var volume = (\\wfVol.kr(~wfVolumes[key] ? 1) * autoLevel).clip(0, 2);\n"
                "    var controlled;\n"
+               "    pan = Lag.kr(pan, 0.05).clip(-1, 1);\n"
                "    stereo = if (stereo.size < 2, { [stereo[0], stereo[0]] }, { [stereo[0], stereo[1]] });\n"
                "    stereo = ~wfApplyBand.(key, stereo);\n"
-               "    controlled = Balance2.ar(stereo[0], stereo[1], pan) * Lag.kr(\\wfVol.kr(~wfVolumes[key] ? 1), 0.05);\n"
+               "    controlled = Balance2.ar(stereo[0], stereo[1], pan) * Lag.kr(volume, 0.05);\n"
                "    controlled = LeakDC.ar(Limiter.ar(controlled, 0.36, 0.025));\n"
                "    Out.ar(~wfLaneBusFor.(key), controlled);\n"
                "    Silent.ar(2);\n"
@@ -1004,6 +1017,23 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "    obj = ~wfObjects[key];\n"
                "    if (obj.notNil and: { obj.respondsTo(\\set) }) { obj.set(\\wfVol, volume, \\wfPan, pan) };\n"
                "};\n"
+               "~wfSetAutomation = { |key, parameter, enabled, source|\n"
+               "    var automations = ~wfAutomations[key];\n"
+               "    var func;\n"
+               "    if (automations.isNil) { automations = IdentityDictionary.new; ~wfAutomations[key] = automations };\n"
+               "    if ((enabled == 0) or: { source.asString.size <= 0 }) {\n"
+               "        automations.removeAt(parameter);\n"
+               "    } {\n"
+               "        try {\n"
+               "            func = (\"{ |key| \" ++ source.asString ++ \" }\").compile;\n"
+               "            automations[parameter] = func;\n"
+               "            (\"WF_AUTOMATION_SET \" ++ key ++ \" \" ++ parameter).postln;\n"
+               "        } { |error|\n"
+               "            automations.removeAt(parameter);\n"
+               "            (\"WF_AUTOMATION_ERROR \" ++ key ++ \" \" ++ parameter ++ \" \" ++ error.errorString).warn;\n"
+               "        };\n"
+               "    };\n"
+               "};\n"
                "~wfSetBand = { |key, low, high|\n"
                "    var obj;\n"
                "    var maxFilterHz = (((s.sampleRate ? 44100) * 0.5) - 40).clip(80, 20000);\n"
@@ -1047,6 +1077,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "    ~wfObjects.keys.copy.do { |key| ~wfStop.(key, 0.025) };\n"
                "    ~wfPrograms = IdentityDictionary.new;\n"
                "    ~wfFrozenPaths = IdentityDictionary.new;\n"
+               "    ~wfAutomations = IdentityDictionary.new;\n"
                "    ~wfVolumes = IdentityDictionary.new;\n"
                "    ~wfPans = IdentityDictionary.new;\n"
                "    ~wfBandLows = IdentityDictionary.new;\n"
@@ -1062,6 +1093,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "    ~wfVolumes = IdentityDictionary.new;\n"
                "    ~wfPans = IdentityDictionary.new;\n"
                "    ~wfFrozenPaths = IdentityDictionary.new;\n"
+               "    ~wfAutomations = IdentityDictionary.new;\n"
                "    ~wfFrozenBuffers = IdentityDictionary.new;\n"
                "    ~wfFrozenBufferPaths = IdentityDictionary.new;\n"
                "    ~wfLaneBuses = IdentityDictionary.new;\n"
@@ -1404,6 +1436,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "}, '/wf/transition');\n"
                "OSCdef(\\wfVolume, { |msg| ~wfSetVolume.(msg[1].asString.asSymbol, msg[2].asFloat); }, '/wf/volume');\n"
                "OSCdef(\\wfMix, { |msg| ~wfSetMix.(msg[1].asString.asSymbol, msg[2].asFloat, msg[3].asFloat); }, '/wf/mix');\n"
+               "OSCdef(\\wfAutomation, { |msg| ~wfSetAutomation.(msg[1].asString.asSymbol, msg[2].asString.asSymbol, msg[3].asInteger != 0, msg[4].asString); }, '/wf/automation');\n"
                "OSCdef(\\wfBand, { |msg| ~wfSetBand.(msg[1].asString.asSymbol, msg[2].asFloat, msg[3].asFloat); }, '/wf/band');\n"
                "OSCdef(\\wfMasterGain, { |msg| ~wfSetMasterGain.(msg[1].asFloat); }, '/wf/masterGain');\n"
                "OSCdef(\\wfStop, { |msg| ~wfStop.(msg[1].asString.asSymbol, msg[2].asFloat); }, '/wf/stop');\n"
@@ -1553,6 +1586,57 @@ void SuperColliderHost::sendMixCommand (const juce::String& laneId, float volume
 
         if (oscConnected)
             oscSender.send ("/wf/mix", laneId, clippedVolume, clippedPan);
+    }
+
+juce::String SuperColliderHost::automationExpressionFor (const Lane::Automation& automation)
+    {
+        if (! automation.enabled || automation.script.trim().isEmpty())
+            return {};
+
+        if (automation.language == "supercollider")
+            return automation.script.trim();
+
+        auto source = automation.script.toLowerCase();
+        const auto parameter = automation.parameter;
+        if (source.contains ("sine"))
+            return parameter == "pan"
+                ? "SinOsc.kr((~wfTempoHz ? 1) * 0.25).range(-0.35, 0.35);"
+                : "SinOsc.kr((~wfTempoHz ? 1) * 0.25).range(0.25, 0.95);";
+
+        if (source.contains ("envelope"))
+            return parameter == "pan"
+                ? "EnvGen.kr(Env([0, -0.35, 0.35, 0], [1, 1, 1], \\sin), Impulse.kr((~wfTempoHz ? 1) / 4));"
+                : "EnvGen.kr(Env([0.25, 0.9, 0.45, 0.7], [1, 1, 1], \\sin), Impulse.kr((~wfTempoHz ? 1) / 4));";
+
+        if (source.contains ("random") || source.contains ("noise"))
+            return parameter == "pan"
+                ? "LFNoise1.kr((~wfTempoHz ? 1) * 0.5).range(-0.65, 0.65);"
+                : "LFNoise1.kr((~wfTempoHz ? 1) * 0.5).range(0.25, 0.85);";
+
+        const auto numeric = automation.script.trim().getDoubleValue();
+        if (automation.script.trim().containsOnly ("0123456789.-"))
+            return juce::String (parameter == "pan" ? juce::jlimit (-1.0, 1.0, numeric)
+                                                    : juce::jlimit (0.0, 1.0, numeric), 4) + ";";
+
+        return parameter == "pan"
+            ? "SinOsc.kr((~wfTempoHz ? 1) * 0.25).range(-0.35, 0.35);"
+            : "SinOsc.kr((~wfTempoHz ? 1) * 0.25).range(0.25, 0.95);";
+    }
+
+void SuperColliderHost::sendAutomationCommand (const juce::String& laneId, const Lane::Automation& automation)
+    {
+        const auto expression = automationExpressionFor (automation);
+        const auto enabled = automation.enabled && expression.isNotEmpty() ? 1 : 0;
+        const auto parameter = automation.parameter == "pan" ? juce::String ("pan") : juce::String ("meter");
+
+        if (shouldUseCommandFallback())
+            writeCommand ("~wfSetAutomation.(" + scSymbolLiteral (laneId) + ", "
+                          + scSymbolLiteral (parameter) + ", "
+                          + juce::String (enabled) + ", "
+                          + scStringLiteral (expression) + ");\n");
+
+        if (oscConnected)
+            oscSender.send ("/wf/automation", laneId, parameter, enabled, expression);
     }
 
 void SuperColliderHost::sendBandCommand (const juce::String& laneId, double lowHz, double highHz)
