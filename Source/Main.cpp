@@ -6750,10 +6750,15 @@ public:
         addAndMakeVisible (continueButton);
         addAndMakeVisible (loadButton);
 
-        simpleButton.setButtonText ("Simple Demo");
-        complexButton.setButtonText ("Complex Demo");
+        simpleButton.setButtonText ("Simple");
+        complexButton.setButtonText ("Complex");
         continueButton.setButtonText ("Continue");
-        loadButton.setButtonText ("Load Project");
+        loadButton.setButtonText ("Load");
+
+        stylePrimaryButton (complexButton, accentB());
+        styleButton (simpleButton, accentA());
+        styleButton (continueButton, mutedInk());
+        styleButton (loadButton, mutedInk());
 
         simpleButton.onClick = [this] { if (onSimpleDemo) onSimpleDemo(); };
         complexButton.onClick = [this] { if (onComplexDemo) onComplexDemo(); };
@@ -6763,51 +6768,147 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (backgroundTop().withAlpha (0.96f));
+        juce::ColourGradient bg (juce::Colour (0xff0a0d12), 0.0f, 0.0f,
+                                 juce::Colour (0xff161b21), 0.0f, static_cast<float> (getHeight()), false);
+        g.setGradientFill (bg);
+        g.fillAll();
 
-        auto panel = getLocalBounds().toFloat().reduced (juce::jmax (40.0f, static_cast<float> (getWidth()) * 0.18f),
-                                                         juce::jmax (42.0f, static_cast<float> (getHeight()) * 0.16f));
-        g.setColour (panelFill().withAlpha (0.96f));
-        g.fillRoundedRectangle (panel, 8.0f);
-        g.setColour (hairline().withAlpha (0.42f));
-        g.drawRoundedRectangle (panel.reduced (0.5f), 8.0f, 1.0f);
+        auto bounds = getLocalBounds().toFloat();
+        drawSpectralField (g, bounds.reduced (28.0f, 30.0f));
 
-        auto text = panel.reduced (34.0f, 28.0f);
-        g.setColour (accentB().brighter (0.12f));
-        g.setFont (juce::FontOptions (28.0f, juce::Font::bold));
-        g.drawFittedText ("ff::", text.removeFromTop (38.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+        auto text = getTextBounds();
+        g.setColour (accentB().brighter (0.16f));
+        g.setFont (juce::FontOptions (42.0f, juce::Font::bold));
+        g.drawFittedText ("ff::", text.removeFromTop (58.0f).toNearestInt(), juce::Justification::centredLeft, 1);
 
         g.setColour (ink());
         g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
-        g.drawFittedText ("Spectral finite-state live coding", text.removeFromTop (30.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+        g.drawFittedText ("filter frame", text.removeFromTop (26.0f).toNearestInt(), juce::Justification::centredLeft, 1);
 
-        text.removeFromTop (8.0f);
+        text.removeFromTop (12.0f);
         g.setColour (mutedInk().withAlpha (0.86f));
-        g.setFont (juce::FontOptions (13.5f));
-        g.drawFittedText ("Start with a focused three-band sketch, open a richer multi-band system, or continue the restored session.",
-                          text.removeFromTop (42.0f).toNearestInt(), juce::Justification::centredLeft, 2);
+        g.setFont (juce::FontOptions (13.0f));
+        g.drawFittedText ("frequency-band FSMs, nested machines, live SuperCollider lanes, and spectral automation",
+                          text.removeFromTop (46.0f).toNearestInt(), juce::Justification::centredLeft, 2);
 
-        g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
-        g.setColour (mutedInk().withAlpha (0.70f));
-        g.drawFittedText ("Simple: sync, sync+reset, and free-running bands.  Complex: six active bands with varied clocks, rules, and layered states.",
-                          text.removeFromTop (40.0f).toNearestInt(), juce::Justification::centredLeft, 2);
+        text.removeFromTop (18.0f);
+        drawStat (g, text.removeFromTop (24.0f), "bands", "20 Hz - 20 kHz");
+        drawStat (g, text.removeFromTop (24.0f), "states", "up to 12 per band");
+        drawStat (g, text.removeFromTop (24.0f), "lanes", "SC code + automation");
     }
 
     void resized() override
     {
-        auto panel = getLocalBounds().reduced (juce::jmax (40, getWidth() / 5),
-                                               juce::jmax (42, getHeight() / 6));
-        auto buttons = panel.reduced (34, 30).removeFromBottom (92);
-        auto primary = buttons.removeFromTop (42);
-        simpleButton.setBounds (primary.removeFromLeft (primary.getWidth() / 2).reduced (0, 4));
-        complexButton.setBounds (primary.reduced (8, 4));
+        auto actions = getTextBounds().withY (static_cast<float> (getHeight() - juce::jmax (116, getHeight() / 5))).withHeight (90).toNearestInt();
+        auto top = actions.removeFromTop (42);
+        complexButton.setBounds (top.removeFromLeft (juce::jmin (160, top.getWidth() / 2)).reduced (0, 3));
+        simpleButton.setBounds (top.removeFromLeft (juce::jmin (138, top.getWidth())).reduced (8, 3));
 
-        auto secondary = buttons.removeFromBottom (38);
-        continueButton.setBounds (secondary.removeFromLeft (secondary.getWidth() / 2).reduced (0, 4));
-        loadButton.setBounds (secondary.reduced (8, 4));
+        auto lower = actions.removeFromTop (38);
+        continueButton.setBounds (lower.removeFromLeft (120).reduced (0, 4));
+        loadButton.setBounds (lower.removeFromLeft (104).reduced (8, 4));
     }
 
 private:
+    static void styleButton (juce::TextButton& button, juce::Colour colour)
+    {
+        button.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff131820));
+        button.setColour (juce::TextButton::buttonOnColourId, rowFill().interpolatedWith (colour, 0.20f));
+        button.setColour (juce::TextButton::textColourOffId, colour.brighter (0.08f));
+    }
+
+    static void stylePrimaryButton (juce::TextButton& button, juce::Colour colour)
+    {
+        button.setColour (juce::TextButton::buttonColourId, rowFill().interpolatedWith (colour, 0.30f));
+        button.setColour (juce::TextButton::buttonOnColourId, rowFill().interpolatedWith (colour, 0.42f));
+        button.setColour (juce::TextButton::textColourOffId, ink());
+    }
+
+    juce::Rectangle<float> getTextBounds() const
+    {
+        auto bounds = getLocalBounds().toFloat();
+        return bounds.removeFromLeft (juce::jmin (460.0f, bounds.getWidth() * 0.46f))
+                     .reduced (44.0f, 46.0f);
+    }
+
+    void drawSpectralField (juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        auto map = area.withTrimmedLeft (juce::jmin (420.0f, area.getWidth() * 0.40f)).reduced (4.0f, 10.0f);
+        g.setColour (juce::Colour (0xff090c11).withAlpha (0.68f));
+        g.fillRoundedRectangle (map, 8.0f);
+        g.setColour (hairline().withAlpha (0.30f));
+        g.drawRoundedRectangle (map.reduced (0.5f), 8.0f, 1.0f);
+
+        const double ticks[] = { 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0 };
+        for (auto hz : ticks)
+        {
+            const auto x = welcomeLogX (hz, map.reduced (28.0f, 0.0f));
+            g.setColour (hairline().withAlpha (hz == 1000.0 ? 0.30f : 0.14f));
+            g.drawVerticalLine (juce::roundToInt (x), map.getY() + 18.0f, map.getBottom() - 28.0f);
+        }
+
+        for (int i = 0; i < 6; ++i)
+        {
+            const auto hz = std::pow (10.0, std::log10 (30.0) + (std::log10 (14000.0) - std::log10 (30.0)) * (static_cast<double> (i) / 5.0));
+            auto centre = juce::Point<float> (welcomeLogX (hz, map.reduced (28.0f, 0.0f)),
+                                              map.getY() + 60.0f + std::fmod (static_cast<float> (i * 71), juce::jmax (80.0f, map.getHeight() - 130.0f)));
+            drawIsland (g, centre, 40.0f + static_cast<float> ((i % 3) * 10), graphColour (i + 2), i);
+        }
+
+        g.setColour (mutedInk().withAlpha (0.42f));
+        g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+        g.drawFittedText ("spectral topology", map.reduced (18.0f).removeFromTop (24.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+    }
+
+    static float welcomeLogX (double hz, juce::Rectangle<float> area)
+    {
+        const auto minLog = std::log10 (20.0);
+        const auto maxLog = std::log10 (20000.0);
+        const auto norm = (std::log10 (juce::jlimit (20.0, 20000.0, hz)) - minLog) / (maxLog - minLog);
+        return area.getX() + static_cast<float> (norm) * area.getWidth();
+    }
+
+    void drawIsland (juce::Graphics& g, juce::Point<float> centre, float radius, juce::Colour colour, int seed)
+    {
+        g.setColour (colour.withAlpha (0.10f));
+        g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
+        g.setColour (colour.withAlpha (0.48f));
+        g.drawEllipse (centre.x - radius * 0.64f, centre.y - radius * 0.64f, radius * 1.28f, radius * 1.28f, 1.0f);
+
+        juce::Point<float> previous;
+        for (int i = 0; i < 7; ++i)
+        {
+            const auto angle = -juce::MathConstants<float>::halfPi + static_cast<float> (i) * juce::MathConstants<float>::twoPi / 7.0f;
+            const auto p = centre + juce::Point<float> (std::cos (angle), std::sin (angle)) * (radius * 0.50f);
+            if (i > 0)
+            {
+                g.setColour (colour.withAlpha (0.20f));
+                g.drawLine ({ previous, p }, 1.0f);
+            }
+
+            g.setColour (graphColour (seed + i).withAlpha (0.76f));
+            g.fillEllipse (p.x - 7.0f, p.y - 7.0f, 14.0f, 14.0f);
+            g.setColour (ink().withAlpha (0.72f));
+            g.setFont (juce::FontOptions (7.5f, juce::Font::bold));
+            g.drawFittedText (juce::String (i + 1), juce::Rectangle<float> (p.x - 7.0f, p.y - 6.0f, 14.0f, 12.0f).toNearestInt(), juce::Justification::centred, 1);
+            previous = p;
+        }
+
+        g.setColour (juce::Colour (0xff080b0f).withAlpha (0.92f));
+        g.fillEllipse (centre.x - 17.0f, centre.y - 17.0f, 34.0f, 34.0f);
+        g.setColour (colour.withAlpha (0.70f));
+        g.drawEllipse (centre.x - 17.0f, centre.y - 17.0f, 34.0f, 34.0f, 1.2f);
+    }
+
+    void drawStat (juce::Graphics& g, juce::Rectangle<float> row, const juce::String& label, const juce::String& value)
+    {
+        g.setColour (accentA().withAlpha (0.72f));
+        g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+        g.drawFittedText (label, row.removeFromLeft (72.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+        g.setColour (mutedInk().withAlpha (0.78f));
+        g.drawFittedText (value, row.toNearestInt(), juce::Justification::centredLeft, 1);
+    }
+
     juce::TextButton simpleButton;
     juce::TextButton complexButton;
     juce::TextButton continueButton;
