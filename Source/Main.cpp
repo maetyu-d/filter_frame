@@ -6862,8 +6862,8 @@ public:
         masterGainLabel.setFont (juce::FontOptions (11.5f, juce::Font::bold));
         masterGainLabel.setColour (juce::Label::textColourId, mutedInk());
         masterGainLabel.setJustificationType (juce::Justification::centredLeft);
-        masterGainSlider.setRange (0.0, 2.0, 0.01);
-        masterGainSlider.setValue (0.7, juce::dontSendNotification);
+        masterGainSlider.setRange (0.0, 5.0, 0.01);
+        masterGainSlider.setValue (1.0, juce::dontSendNotification);
         masterGainSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 22);
         masterGainSlider.setTextValueSuffix ("x");
         masterGainSlider.onValueChange = [this]
@@ -9114,7 +9114,7 @@ private:
         exportSettings.sampleFormat = parsed.getProperty ("exportSampleFormat", "int16").toString();
         if (exportSettings.sampleFormat != "int24" && exportSettings.sampleFormat != "float")
             exportSettings.sampleFormat = "int16";
-        const auto masterGain = juce::jlimit (0.0, 2.0, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
+        const auto masterGain = juce::jlimit (0.0, 5.0, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
         masterGainSlider.setValue (masterGain, juce::dontSendNotification);
         host.setMasterGain (static_cast<float> (masterGain));
         masterLimiterEnabled = static_cast<bool> (parsed.getProperty ("masterLimiter", true));
@@ -9549,7 +9549,7 @@ private:
 
         const auto rate = static_cast<double> (parsed.getProperty ("rate", rateSlider.getValue()));
         rateSlider.setValue (juce::jlimit (0.2, 4.0, rate), juce::dontSendNotification);
-        const auto masterGain = juce::jlimit (0.0, 2.0, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
+        const auto masterGain = juce::jlimit (0.0, 5.0, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
         masterGainSlider.setValue (masterGain, juce::dontSendNotification);
         host.setMasterGain (static_cast<float> (masterGain));
         masterLimiterEnabled = static_cast<bool> (parsed.getProperty ("masterLimiter", masterLimiterEnabled));
@@ -9841,7 +9841,7 @@ private:
 
         const auto rate = static_cast<double> (parsed.getProperty ("rate", rateSlider.getValue()));
         rateSlider.setValue (juce::jlimit (0.2, 4.0, rate), juce::dontSendNotification);
-        const auto masterGain = juce::jlimit (0.0, 2.0, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
+        const auto masterGain = juce::jlimit (0.0, 5.0, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
         masterGainSlider.setValue (masterGain, juce::dontSendNotification);
         host.setMasterGain (static_cast<float> (masterGain));
         masterLimiterEnabled = static_cast<bool> (parsed.getProperty ("masterLimiter", masterLimiterEnabled));
