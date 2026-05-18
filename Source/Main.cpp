@@ -8720,140 +8720,104 @@ public:
         g.setGradientFill (rainbow);
         g.fillRect (strip);
 
-        auto chrome = getLocalBounds().reduced (18).toFloat();
-        auto rail = chrome.removeFromLeft (172.0f);
-        chrome.removeFromLeft (14.0f);
+        auto chrome = getLocalBounds().reduced (18);
+        auto header = chrome.removeFromTop (46).toFloat();
+        auto tabs = shouldShowStateStrip() ? chrome.removeFromTop (36).toFloat()
+                                           : juce::Rectangle<float>();
 
-        juce::ColourGradient railFill (juce::Colour (0xff0b1014).withAlpha (0.96f), rail.getTopLeft(),
-                                       juce::Colour (0xff1b1820).withAlpha (0.96f), rail.getBottomRight(), false);
-        railFill.addColour (0.48, juce::Colour (0xff111922).withAlpha (0.96f));
-        g.setGradientFill (railFill);
-        g.fillRoundedRectangle (rail, 16.0f);
-        g.setColour (hairline().withAlpha (0.24f));
-        g.drawRoundedRectangle (rail.reduced (0.5f), 16.0f, 1.0f);
+        g.setColour (panelFill().withAlpha (0.34f));
+        g.fillRoundedRectangle (header.reduced (0.0f, 3.0f), 8.0f);
+        g.setColour (hairline().withAlpha (0.16f));
+        g.drawRoundedRectangle (header.reduced (0.0f, 3.0f), 8.0f, 1.0f);
 
-        auto railAccent = rail.reduced (13.0f, 12.0f).removeFromTop (3.0f);
-        juce::ColourGradient railLine (accentB().withAlpha (0.86f), railAccent.getTopLeft(),
-                                       accentA().withAlpha (0.82f), railAccent.getTopRight(), false);
-        railLine.addColour (0.62, accentC().withAlpha (0.72f));
-        g.setGradientFill (railLine);
-        g.fillRoundedRectangle (railAccent, 2.0f);
-
-        if (shouldShowStateStrip())
+        if (! tabs.isEmpty())
         {
-            auto tabs = chrome.removeFromTop (36.0f);
-            g.setColour (panelFill().withAlpha (0.20f));
-            g.fillRoundedRectangle (tabs.reduced (0.0f, 4.0f), 10.0f);
-            g.setColour (hairline().withAlpha (0.12f));
-            g.drawRoundedRectangle (tabs.reduced (0.0f, 4.0f), 10.0f, 1.0f);
+            g.setColour (panelFill().withAlpha (0.26f));
+            g.fillRoundedRectangle (tabs.reduced (0.0f, 4.0f), 8.0f);
+            g.setColour (hairline().withAlpha (0.13f));
+            g.drawRoundedRectangle (tabs.reduced (0.0f, 4.0f), 8.0f, 1.0f);
         }
     }
 
     void resized() override
     {
-        auto frame = getLocalBounds().reduced (18);
-        auto rail = frame.removeFromLeft (172);
-        frame.removeFromLeft (14);
-        auto area = frame;
+        auto area = getLocalBounds().reduced (18);
+        auto header = area.removeFromTop (46);
+        auto headerInner = header.reduced (10, 7);
+        title.setBounds (headerInner.removeFromLeft (74));
+        projectFileLabel.setBounds (headerInner.removeFromLeft (150).reduced (2, 2));
+        statusLabel.setBounds (headerInner.removeFromLeft (128).reduced (5, 2));
+        headerInner.removeFromLeft (6);
 
-        auto railInner = rail.reduced (12, 14);
-        railInner.removeFromTop (8);
-        title.setBounds (railInner.removeFromTop (36));
-        projectFileLabel.setBounds (railInner.removeFromTop (24).reduced (1, 1));
-        statusLabel.setBounds (railInner.removeFromTop (30).reduced (0, 3));
-        railInner.removeFromTop (10);
+        auto topCountArea = headerInner.removeFromRight (148);
+        topStateCountLabel.setBounds (topCountArea.removeFromLeft (48).reduced (2, 2));
+        topStateCountMinus.setBounds (topCountArea.removeFromLeft (26).reduced (2, 0));
+        topStateCountEditor.setBounds (topCountArea.removeFromLeft (36).reduced (2, 0));
+        topStateCountPlus.setBounds (topCountArea.removeFromLeft (26).reduced (2, 0));
+        headerInner.removeFromRight (8);
+        rateSlider.setBounds (headerInner.removeFromRight (122).reduced (4, 0));
 
-        auto masterRow = railInner.removeFromTop (34);
-        masterGainLabel.setBounds (masterRow.removeFromLeft (32).reduced (0, 3));
-        masterGainSlider.setBounds (masterRow.reduced (0, 2));
-        railInner.removeFromTop (12);
-
-        const auto headerControlWidth = area.getWidth();
-        headerCompactLevel = headerControlWidth < 760 ? 2 : (headerControlWidth < 920 ? 1 : 0);
+        auto buttonRow = headerInner;
+        const auto headerControlWidth = buttonRow.getWidth();
+        headerCompactLevel = headerControlWidth < 780 ? 2 : (headerControlWidth < 920 ? 1 : 0);
+        const auto compact = headerCompactLevel > 0;
+        const auto tiny = headerCompactLevel > 1;
         const auto filterbankChrome = workspaceMode == WorkspaceMode::filterbank;
 
-        undoButton.setButtonText ("Undo");
-        redoButton.setButtonText ("Redo");
-        logButton.setButtonText ("Log");
+        undoButton.setButtonText (tiny ? "U" : "Undo");
+        redoButton.setButtonText (tiny ? "R" : "Redo");
+        logButton.setButtonText (tiny ? "L" : "Log");
         updateArrangementButtonText();
 
-        auto railButton = [&railInner] (juce::Button& button, int width = -1)
+        auto addButton = [&buttonRow] (juce::Button& button, int width)
         {
             button.setVisible (true);
-            if (width < 0)
-                button.setBounds (railInner.removeFromTop (36).reduced (0, 3));
-            else
-                button.setBounds (railInner.removeFromLeft (width).reduced (0, 3));
+            button.setBounds (buttonRow.removeFromLeft (width).reduced (3, 0));
         };
         auto hideButton = [] (juce::Button& button)
         {
             button.setVisible (false);
             button.setBounds ({});
         };
+        auto addGap = [&buttonRow] (int width) { buttonRow.removeFromLeft (width); };
 
-        railButton (runButton);
+        masterGainLabel.setBounds (buttonRow.removeFromLeft (28).reduced (3, 2));
+        masterGainSlider.setBounds (buttonRow.removeFromLeft (compact ? 82 : 100).reduced (3, 0));
+        addGap (5);
+        addButton (runButton, compact ? 64 : 72);
         if (filterbankChrome)
             hideButton (stepButton);
         else
-            railButton (stepButton);
-
-        auto stopRow = railInner.removeFromTop (36);
-        stopAllButton.setVisible (true);
-        panicButton.setVisible (true);
-        stopAllButton.setBounds (stopRow.removeFromLeft (70).reduced (0, 3));
-        stopRow.removeFromLeft (6);
-        panicButton.setBounds (stopRow.reduced (0, 3));
-        railInner.removeFromTop (12);
-
-        auto fileRow = railInner.removeFromTop (36);
-        loadProjectButton.setVisible (true);
-        saveProjectButton.setVisible (true);
-        loadProjectButton.setBounds (fileRow.removeFromLeft (70).reduced (0, 3));
-        fileRow.removeFromLeft (6);
-        saveProjectButton.setBounds (fileRow.reduced (0, 3));
-
-        auto editRow = railInner.removeFromTop (36);
-        undoButton.setVisible (true);
-        redoButton.setVisible (true);
-        undoButton.setBounds (editRow.removeFromLeft (70).reduced (0, 3));
-        editRow.removeFromLeft (6);
-        redoButton.setBounds (editRow.reduced (0, 3));
-        railInner.removeFromTop (12);
-
-        logButton.setVisible (true);
-        logButton.setBounds (railInner.removeFromTop (34).reduced (0, 3));
+            addButton (stepButton, compact ? 52 : 62);
+        addButton (stopAllButton, compact ? 62 : 66);
+        addButton (panicButton, compact ? 66 : 74);
+        addGap (7);
+        addButton (loadProjectButton, compact ? 52 : 62);
+        addButton (saveProjectButton, compact ? 52 : 62);
+        addGap (6);
+        addButton (undoButton, tiny ? 38 : (compact ? 60 : 70));
+        addButton (redoButton, tiny ? 38 : (compact ? 56 : 66));
+        addGap (6);
+        addButton (logButton, tiny ? 38 : (compact ? 48 : 54));
         if (filterbankChrome)
             hideButton (arrangementViewButton);
         else
-            railButton (arrangementViewButton);
+            addButton (arrangementViewButton, tiny ? 54 : (compact ? 66 : 88));
 
-        if (! filterbankChrome)
+        if (! filterbankChrome && buttonRow.getWidth() >= 102)
         {
-            auto graphRow = railInner.removeFromTop (34);
-            graphFitButton.setVisible (true);
-            graphLayoutButton.setVisible (true);
-            graphFitButton.setBounds (graphRow.removeFromLeft (52).reduced (0, 3));
-            graphRow.removeFromLeft (6);
-            graphLayoutButton.setBounds (graphRow.reduced (0, 3));
+            addButton (graphFitButton, 38);
+            addButton (graphLayoutButton, 58);
         }
         else
         {
             hideButton (graphFitButton);
             hideButton (graphLayoutButton);
         }
-        railInner.removeFromTop (12);
-
-        topStateCountLabel.setBounds (railInner.removeFromTop (20).reduced (1, 1));
-        auto topCountArea = railInner.removeFromTop (32);
-        topStateCountMinus.setBounds (topCountArea.removeFromLeft (34).reduced (0, 3));
-        topStateCountEditor.setBounds (topCountArea.removeFromLeft (52).reduced (5, 3));
-        topStateCountPlus.setBounds (topCountArea.removeFromLeft (34).reduced (0, 3));
-        railInner.removeFromTop (8);
-        rateSlider.setBounds (railInner.removeFromTop (34).reduced (0, 3));
 
         const auto horizontalDividerHeight = 8;
         constexpr int compactArrangementHeight = 108;
-        const auto topWorkspaceHeight = shouldShowStateStrip() ? 36 : 0;
+        const auto topWorkspaceHeight = 36;
         const auto minGraphHeight = codeExpanded ? 112 : 230;
         const auto minBottomHeight = codeExpanded ? 320 : 170;
         const auto maxBottomHeight = juce::jmax (minBottomHeight, area.getHeight() - topWorkspaceHeight - minGraphHeight - horizontalDividerHeight);
