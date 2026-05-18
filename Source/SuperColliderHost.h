@@ -77,7 +77,6 @@ public:
     void stepMachine();
     void cancelExport();
     void setMasterGain (float gain);
-    void setMasterLimiterEnabled (bool shouldUseLimiter);
     void testTone (const juce::String& sclangPath);
     juce::String checkScript (const juce::String& script, const juce::String& sclangPath);
     juce::String readCheckResult (const juce::String& checkId) const;
@@ -102,7 +101,6 @@ private:
     void sendMixCommand (const juce::String& laneId, float volume, float pan);
     void sendBandCommand (const juce::String& laneId, double lowHz, double highHz);
     void sendMasterGainCommand (float gain);
-    void sendMasterLimiterCommand (bool shouldUseLimiter);
     void sendStopCommand (const juce::String& laneId, double releaseSeconds);
     void sendStopAllCommand();
     void sendClearMachineCommand();
@@ -131,7 +129,6 @@ private:
     std::thread logReader;
     juce::String currentStatus { "Audio offline" };
     float masterGain = 1.0f;
-    bool masterLimiterEnabled = true;
     juce::OwnedArray<juce::File> tempScriptStorage;
     juce::HashMap<juce::String, juce::File*> tempScripts;
 };
