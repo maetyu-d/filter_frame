@@ -5310,11 +5310,13 @@ private:
 
     void drawAutomationDot (juce::Graphics& g, juce::Rectangle<int> bounds, juce::Colour colour, bool active, bool enabled) const
     {
-        auto dot = bounds.toFloat().withSizeKeepingCentre (8.0f, 8.0f);
-        g.setColour ((active ? colour : colour.withMultipliedSaturation (0.55f)).withAlpha (enabled ? (active ? 0.94f : 0.46f) : 0.18f));
+        auto dot = bounds.toFloat().withSizeKeepingCentre (11.0f, 11.0f);
+        g.setColour (juce::Colour (0xff080b0f).withAlpha (0.92f));
+        g.fillEllipse (dot.expanded (2.0f));
+        g.setColour ((active ? colour.brighter (0.12f) : colour.withMultipliedSaturation (0.72f)).withAlpha (enabled ? (active ? 0.98f : 0.78f) : 0.32f));
         g.fillEllipse (dot);
-        g.setColour (active ? ink().withAlpha (0.86f) : juce::Colour (0xff080b0f).withAlpha (0.88f));
-        g.drawEllipse (dot.expanded (1.0f), active ? 1.2f : 0.8f);
+        g.setColour (active ? ink().withAlpha (0.92f) : hairline().withAlpha (0.84f));
+        g.drawEllipse (dot.expanded (1.0f), active ? 1.5f : 1.0f);
     }
 
     void drawSmallMixStrip (juce::Graphics& g, juce::Rectangle<int> area, const juce::String& label, float normalised, const juce::String& value, juce::Colour colour, bool enabled) const
@@ -12358,6 +12360,12 @@ private:
         auto& state = bandMachine.state (bandMachine.selectedState);
         auto& lane = filterbank.selectedLaneRef();
 
+        if (! overviewAutomationMixerPrimed && inspectorMode == InspectorMode::tracks)
+        {
+            setInspectorMode (InspectorMode::mixer);
+            overviewAutomationMixerPrimed = true;
+        }
+
         rules.setVisible (true);
         rules.setMachine (bandMachine);
         graph.setVisible (false);
@@ -12653,6 +12661,7 @@ private:
     bool logVisible = false;
     bool codeExpanded = false;
     bool topologyPlusFullScreen = false;
+    bool overviewAutomationMixerPrimed = false;
     int headerCompactLevel = 0;
     int arrangementViewMode = 0;
     WorkspaceMode workspaceMode = WorkspaceMode::filterbank;
