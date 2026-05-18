@@ -1566,8 +1566,8 @@ public:
 
         topologyPlusButton = header.removeFromRight (118.0f).reduced (4.0f, 2.0f);
         fsmButton = header.removeFromRight (72.0f).reduced (4.0f, 2.0f);
-        overviewButton = header.removeFromRight (118.0f).reduced (4.0f, 2.0f);
         octaveButton = header.removeFromRight (110.0f).reduced (4.0f, 2.0f);
+        overviewButton = header.removeFromRight (118.0f).reduced (4.0f, 2.0f);
         drawModeButton (g, overviewButton, "Overview", model->viewMode == FilterbankViewMode::overview);
         drawModeButton (g, topologyPlusButton, "Topology+", model->viewMode == FilterbankViewMode::topologyPlus);
         drawModeButton (g, fsmButton, "FSM", model->viewMode == FilterbankViewMode::fsm);
