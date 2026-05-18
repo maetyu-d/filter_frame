@@ -6611,6 +6611,7 @@ public:
         addAndMakeVisible (topStateCountPlus);
         addAndMakeVisible (masterGainLabel);
         addAndMakeVisible (masterGainSlider);
+        addAndMakeVisible (masterLimiterButton);
         addAndMakeVisible (runButton);
         addAndMakeVisible (stepButton);
         addAndMakeVisible (stopAllButton);
@@ -6868,6 +6869,18 @@ public:
         masterGainSlider.onValueChange = [this]
         {
             host.setMasterGain (static_cast<float> (masterGainSlider.getValue()));
+            saveAppState();
+        };
+        masterLimiterButton.setButtonText ("Lim");
+        masterLimiterButton.setClickingTogglesState (true);
+        masterLimiterButton.setToggleState (masterLimiterEnabled, juce::dontSendNotification);
+        masterLimiterButton.setColour (juce::TextButton::buttonColourId, rowFill());
+        masterLimiterButton.setColour (juce::TextButton::buttonOnColourId, accentA().darker (0.28f));
+        masterLimiterButton.onClick = [this]
+        {
+            masterLimiterEnabled = masterLimiterButton.getToggleState();
+            host.setMasterLimiterEnabled (masterLimiterEnabled);
+            saveAppState();
         };
 
         rulesTracksDivider.onDragged = [this] (int delta)
@@ -8158,6 +8171,7 @@ public:
 
         masterGainLabel.setBounds (buttonRow.removeFromLeft (28).reduced (3, 2));
         masterGainSlider.setBounds (buttonRow.removeFromLeft (compact ? 76 : 96).reduced (3, 0));
+        masterLimiterButton.setBounds (buttonRow.removeFromLeft (compact ? 42 : 48).reduced (3, 0));
         addGap (5);
         addButton (runButton, compact ? 64 : 72);
         addButton (stepButton, compact ? 52 : 62);
@@ -9053,6 +9067,7 @@ private:
         object->setProperty ("exportTailSeconds", exportSettings.tailSeconds);
         object->setProperty ("exportSampleFormat", exportSettings.sampleFormat);
         object->setProperty ("masterGain", masterGainSlider.getValue());
+        object->setProperty ("masterLimiter", masterLimiterEnabled);
 
         juce::Array<juce::var> recent;
         for (const auto& path : recentProjects)
@@ -9102,6 +9117,9 @@ private:
         const auto masterGain = juce::jlimit (0.0, 5.0, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
         masterGainSlider.setValue (masterGain, juce::dontSendNotification);
         host.setMasterGain (static_cast<float> (masterGain));
+        masterLimiterEnabled = static_cast<bool> (parsed.getProperty ("masterLimiter", true));
+        masterLimiterButton.setToggleState (masterLimiterEnabled, juce::dontSendNotification);
+        host.setMasterLimiterEnabled (masterLimiterEnabled);
     }
 
     void restoreLastProject()
@@ -9418,6 +9436,7 @@ private:
         object->setProperty ("schema", "ff:: Project v2 - per-band FSM filterbank");
         object->setProperty ("rate", rateSlider.getValue());
         object->setProperty ("masterGain", masterGainSlider.getValue());
+        object->setProperty ("masterLimiter", masterLimiterEnabled);
         object->setProperty ("workspaceMode", workspaceMode == WorkspaceMode::filterbank ? "filterbank" : "fsm");
         object->setProperty ("machine", machineToProjectVar (machine));
         object->setProperty ("filterbank", filterbankToProjectVar());
@@ -9533,6 +9552,9 @@ private:
         const auto masterGain = juce::jlimit (0.0, 5.0, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
         masterGainSlider.setValue (masterGain, juce::dontSendNotification);
         host.setMasterGain (static_cast<float> (masterGain));
+        masterLimiterEnabled = static_cast<bool> (parsed.getProperty ("masterLimiter", masterLimiterEnabled));
+        masterLimiterButton.setToggleState (masterLimiterEnabled, juce::dontSendNotification);
+        host.setMasterLimiterEnabled (masterLimiterEnabled);
         machineStack.clear();
         activeMachine = &machine;
         inspectedMachine = &machine;
@@ -9822,6 +9844,9 @@ private:
         const auto masterGain = juce::jlimit (0.0, 5.0, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
         masterGainSlider.setValue (masterGain, juce::dontSendNotification);
         host.setMasterGain (static_cast<float> (masterGain));
+        masterLimiterEnabled = static_cast<bool> (parsed.getProperty ("masterLimiter", masterLimiterEnabled));
+        masterLimiterButton.setToggleState (masterLimiterEnabled, juce::dontSendNotification);
+        host.setMasterLimiterEnabled (masterLimiterEnabled);
         machineStack.clear();
         activeMachine = &machine;
         inspectedMachine = &machine;
@@ -12250,6 +12275,7 @@ private:
     juce::TextButton topStateCountPlus;
     juce::Label masterGainLabel;
     juce::Slider masterGainSlider;
+    juce::TextButton masterLimiterButton;
     juce::TextButton runButton;
     juce::TextButton stepButton;
     juce::TextButton stopAllButton;
@@ -12315,6 +12341,7 @@ private:
     bool logVisible = false;
     bool codeExpanded = false;
     bool topologyPlusFullScreen = false;
+    bool masterLimiterEnabled = true;
     int headerCompactLevel = 0;
     int arrangementViewMode = 0;
     WorkspaceMode workspaceMode = WorkspaceMode::filterbank;

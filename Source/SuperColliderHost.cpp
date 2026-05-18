@@ -747,6 +747,7 @@ bool SuperColliderHost::ensureBridgeRunningLocked(const juce::String& sclangPath
         bridgeLogReadPosition = 0;
         startLogReader();
         sendMasterGainCommand (masterGain);
+        sendMasterLimiterCommand (masterLimiterEnabled);
         return true;
     }
 
@@ -823,6 +824,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "~wfExportCancel = false;\n"
                "~wfExporting = false;\n"
                "~wfMasterGain = 1.0;\n"
+               "~wfMasterLimiter = 1;\n"
                "~wfJuce = NetAddr(\"127.0.0.1\", 57142);\n"
                "~wfReportAudio = {\n"
                "    var device = (s.options.device ? \"default\").asString;\n"
@@ -882,16 +884,19 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "        (\"WF_CHECK_ERROR \" ++ checkId ++ \" \" ++ error.errorString).postln;\n"
                "    };\n"
                "};\n"
-               "SynthDef(\\wfLaneRouter, { |bus = 0, replyId = 0|\n"
+               "SynthDef(\\wfLaneRouter, { |bus = 0, replyId = 0, wfMasterGain = 1, wfMasterLimiter = 1|\n"
                "    var sig = In.ar(bus, 2);\n"
-               "    var mono = Mix(sig) * 0.5;\n"
+               "    var dry = sig * Lag.kr(wfMasterGain.clip(0, 5), 0.035);\n"
+               "    var limited = Limiter.ar(dry, 0.92, 0.018);\n"
+               "    var out = (limited * Lag.kr(wfMasterLimiter.clip(0, 1), 0.02)) + (dry * (1 - Lag.kr(wfMasterLimiter.clip(0, 1), 0.02)));\n"
+               "    var mono = Mix(out) * 0.5;\n"
                "    var meterTrig = Impulse.kr(30, 0) + Trig1.kr(1, ControlDur.ir);\n"
                "    var rms = Amplitude.kr(mono, 0.004, 0.055).clip(0, 1);\n"
                "    var peak = Peak.kr(mono.abs, meterTrig).clip(0, 1);\n"
                "    SendReply.kr(meterTrig, '/wf/laneMeter', [rms, peak], replyId);\n"
-               "    Out.ar(0, sig);\n"
+               "    Out.ar(0, out);\n"
                "}).add;\n"
-               "SynthDef(\\wfFrozenPlayer, { |buf = 0, gate = 1, fade = 0.006, wfVol = 1, wfPan = 0, wfLow = 20, wfHigh = 20000, replyId = 0|\n"
+               "SynthDef(\\wfFrozenPlayer, { |buf = 0, gate = 1, fade = 0.006, wfVol = 1, wfPan = 0, wfLow = 20, wfHigh = 20000, wfMasterGain = 1, wfMasterLimiter = 1, replyId = 0|\n"
                "    var sig = PlayBuf.ar(2, buf, BufRateScale.kr(buf), loop: 1);\n"
                "    var maxFilterHz = ((SampleRate.ir * 0.5) - 40).clip(80, 20000);\n"
                "    var low = Lag.kr(wfLow.clip(20, maxFilterHz - 5), 0.012);\n"
@@ -903,7 +908,8 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "        sig = BLowPass4.ar(sig, high, 0.56);\n"
                "    };\n"
                "    sig = LeakDC.ar(sig);\n"
-               "    controlled = Balance2.ar(sig[0], sig[1], Lag.kr(wfPan.clip(-1, 1), 0.02)) * env * Lag.kr(wfVol, 0.02);\n"
+               "    controlled = Balance2.ar(sig[0], sig[1], Lag.kr(wfPan.clip(-1, 1), 0.02)) * env * Lag.kr(wfVol, 0.02) * Lag.kr(wfMasterGain.clip(0, 5), 0.035);\n"
+               "    controlled = (Limiter.ar(controlled, 0.92, 0.018) * Lag.kr(wfMasterLimiter.clip(0, 1), 0.02)) + (controlled * (1 - Lag.kr(wfMasterLimiter.clip(0, 1), 0.02)));\n"
                "    mono = Mix(controlled) * 0.5;\n"
                "    meterTrig = Impulse.kr(30, 0) + Trig1.kr(1, ControlDur.ir);\n"
                "    rms = Amplitude.kr(mono, 0.004, 0.055).clip(0, 1);\n"
@@ -961,7 +967,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "    var target = ~wfMaster ? s;\n"
                "    if (router.notNil) { router.free };\n"
                "    ~wfLaneRouters[key] = Synth(\\wfLaneRouter,\n"
-               "        [\\bus, bus, \\replyId, ~wfMeterIdFor.(key)],\n"
+               "        [\\bus, bus, \\replyId, ~wfMeterIdFor.(key), \\wfMasterGain, ~wfMasterGain, \\wfMasterLimiter, ~wfMasterLimiter],\n"
                "        target: target,\n"
                "        addAction: if (~wfMaster.notNil, { \\addBefore }, { \\addToTail }));\n"
                "};\n"
@@ -983,6 +989,13 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "~wfSetMasterGain = { |gain|\n"
                "    ~wfMasterGain = gain.clip(0, 5);\n"
                "    if (~wfMaster.notNil) { ~wfMaster.set(\\wfMasterGain, ~wfMasterGain) };\n"
+               "    ~wfLaneRouters.values.do { |router| if (router.notNil) { router.set(\\wfMasterGain, ~wfMasterGain) } };\n"
+               "    ~wfObjects.keysValuesDo { |key, obj| if (~wfFrozenPaths[key].notNil and: { obj.notNil and: { obj.respondsTo(\\set) } }) { obj.set(\\wfMasterGain, ~wfMasterGain) } };\n"
+               "};\n"
+               "~wfSetMasterLimiter = { |enabled|\n"
+               "    ~wfMasterLimiter = enabled.clip(0, 1);\n"
+               "    ~wfLaneRouters.values.do { |router| if (router.notNil) { router.set(\\wfMasterLimiter, ~wfMasterLimiter) } };\n"
+               "    ~wfObjects.keysValuesDo { |key, obj| if (~wfFrozenPaths[key].notNil and: { obj.notNil and: { obj.respondsTo(\\set) } }) { obj.set(\\wfMasterLimiter, ~wfMasterLimiter) } };\n"
                "};\n"
                "~wfSetVolume = { |key, volume|\n"
                "    var obj;\n"
@@ -1074,7 +1087,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "    var buf = ~wfFrozenBuffers[key];\n"
                "    var oldPath = ~wfFrozenBufferPaths[key];\n"
                "    var makeSynth = { |loaded|\n"
-               "        var synth = Synth(\\wfFrozenPlayer, [\\buf, loaded, \\gate, 1, \\fade, ~wfAttack, \\wfVol, ~wfVolumes[key] ? 1, \\wfPan, ~wfPans[key] ? 0, \\wfLow, ~wfBandLows[key] ? 20, \\wfHigh, ~wfBandHighs[key] ? 20000, \\replyId, ~wfMeterIdFor.(key)]);\n"
+               "        var synth = Synth(\\wfFrozenPlayer, [\\buf, loaded, \\gate, 1, \\fade, ~wfAttack, \\wfVol, ~wfVolumes[key] ? 1, \\wfPan, ~wfPans[key] ? 0, \\wfLow, ~wfBandLows[key] ? 20, \\wfHigh, ~wfBandHighs[key] ? 20000, \\wfMasterGain, ~wfMasterGain, \\wfMasterLimiter, ~wfMasterLimiter, \\replyId, ~wfMeterIdFor.(key)]);\n"
                "        ~wfObjects[key] = synth;\n"
                "        synth;\n"
                "    };\n"
@@ -1402,6 +1415,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "OSCdef(\\wfMix, { |msg| ~wfSetMix.(msg[1].asString.asSymbol, msg[2].asFloat, msg[3].asFloat); }, '/wf/mix');\n"
                "OSCdef(\\wfBand, { |msg| ~wfSetBand.(msg[1].asString.asSymbol, msg[2].asFloat, msg[3].asFloat); }, '/wf/band');\n"
                "OSCdef(\\wfMasterGain, { |msg| ~wfSetMasterGain.(msg[1].asFloat); }, '/wf/masterGain');\n"
+               "OSCdef(\\wfMasterLimiter, { |msg| ~wfSetMasterLimiter.(msg[1].asFloat); }, '/wf/masterLimiter');\n"
                "OSCdef(\\wfStop, { |msg| ~wfStop.(msg[1].asString.asSymbol, msg[2].asFloat); }, '/wf/stop');\n"
                "OSCdef(\\wfStopAll, { ~wfStopAll.(); }, '/wf/stopAll');\n"
                "OSCdef(\\wfClear, { ~wfClearMachine.(); }, '/wf/clear');\n"
@@ -1572,6 +1586,13 @@ void SuperColliderHost::setMasterGain (float gain)
         sendMasterGainCommand (masterGain);
     }
 
+void SuperColliderHost::setMasterLimiterEnabled (bool shouldUseLimiter)
+    {
+        const juce::ScopedLock lock (hostLock);
+        masterLimiterEnabled = shouldUseLimiter;
+        sendMasterLimiterCommand (masterLimiterEnabled);
+    }
+
 void SuperColliderHost::sendMasterGainCommand (float gain)
     {
         const auto clippedGain = juce::jlimit (0.0f, 5.0f, gain);
@@ -1581,6 +1602,17 @@ void SuperColliderHost::sendMasterGainCommand (float gain)
 
         if (oscConnected)
             oscSender.send ("/wf/masterGain", clippedGain);
+    }
+
+void SuperColliderHost::sendMasterLimiterCommand (bool shouldUseLimiter)
+    {
+        const auto value = shouldUseLimiter ? 1.0f : 0.0f;
+
+        if (shouldUseCommandFallback())
+            writeCommand ("~wfSetMasterLimiter.(" + juce::String (value, 1) + ");\n");
+
+        if (oscConnected)
+            oscSender.send ("/wf/masterLimiter", value);
     }
 
 void SuperColliderHost::sendStopCommand(const juce::String& laneId, double releaseSeconds)
