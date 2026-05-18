@@ -1552,12 +1552,17 @@ public:
         auto header = bounds.reduced (16.0f, 12.0f).removeFromTop (32.0f);
         g.setFont (juce::FontOptions (17.0f, juce::Font::bold));
         g.setColour (ink());
-        g.drawFittedText ("Parallel Filterbank", header.removeFromLeft (210.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+        g.drawFittedText ("Filterbank", header.removeFromLeft (142.0f).toNearestInt(), juce::Justification::centredLeft, 1);
 
         g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
         g.setColour (mutedInk().withAlpha (0.78f));
-        g.drawFittedText ("20 Hz - 20 kHz | steep crossover bands | per-band SC code",
-                          header.removeFromLeft (420.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+        const auto& selectedBand = model->selectedBandRef();
+        g.drawFittedText (selectedBand.name + " | "
+                          + formatOverviewRange (selectedBand.lowHz, model->highHzForBandSpan (selectedBand))
+                          + " | " + juce::String (model->clampedSpanForBand (selectedBand)) + " band"
+                          + (model->clampedSpanForBand (selectedBand) == 1 ? "" : "s")
+                          + " | " + (selectedBand.syncToFilterbankClock ? "Sync" : "Free"),
+                          header.removeFromLeft (430.0f).toNearestInt(), juce::Justification::centredLeft, 1);
 
         topologyPlusButton = header.removeFromRight (118.0f).reduced (4.0f, 2.0f);
         fsmButton = header.removeFromRight (72.0f).reduced (4.0f, 2.0f);
@@ -8690,6 +8695,12 @@ public:
         saveAppState();
     }
 
+    bool shouldShowStateStrip() const
+    {
+        return workspaceMode == WorkspaceMode::fsm
+            || (workspaceMode == WorkspaceMode::filterbank && filterbank.viewMode == FilterbankViewMode::fsm);
+    }
+
     void paint (juce::Graphics& g) override
     {
         juce::ColourGradient bg (backgroundTop(), getLocalBounds().getTopLeft().toFloat(),
@@ -8711,24 +8722,21 @@ public:
 
         auto chrome = getLocalBounds().reduced (18);
         auto header = chrome.removeFromTop (46).toFloat();
-        auto tabs = chrome.removeFromTop (36).toFloat();
+        auto tabs = shouldShowStateStrip() ? chrome.removeFromTop (36).toFloat()
+                                           : juce::Rectangle<float>();
 
-        g.setColour (panelFill().withAlpha (0.50f));
-        g.fillRoundedRectangle (header.reduced (0.0f, 3.0f), 5.0f);
-        g.setColour (hairline().withAlpha (0.20f));
-        g.drawRoundedRectangle (header.reduced (0.0f, 3.0f), 5.0f, 1.0f);
-
-        g.setColour (panelFill().withAlpha (0.36f));
-        g.fillRoundedRectangle (tabs.reduced (0.0f, 2.0f), 5.0f);
+        g.setColour (panelFill().withAlpha (0.34f));
+        g.fillRoundedRectangle (header.reduced (0.0f, 3.0f), 8.0f);
         g.setColour (hairline().withAlpha (0.16f));
-        g.drawRoundedRectangle (tabs.reduced (0.0f, 2.0f), 5.0f, 1.0f);
+        g.drawRoundedRectangle (header.reduced (0.0f, 3.0f), 8.0f, 1.0f);
 
-        auto divider = tabs.withY (tabs.getBottom() + 4.0f).withHeight (1.0f).reduced (8.0f, 0.0f);
-        juce::ColourGradient line (juce::Colours::transparentBlack, divider.getTopLeft(),
-                                   hairline().withAlpha (0.42f), divider.getCentre(), false);
-        line.addColour (1.0, juce::Colours::transparentBlack);
-        g.setGradientFill (line);
-        g.fillRect (divider);
+        if (! tabs.isEmpty())
+        {
+            g.setColour (panelFill().withAlpha (0.26f));
+            g.fillRoundedRectangle (tabs.reduced (0.0f, 4.0f), 8.0f);
+            g.setColour (hairline().withAlpha (0.13f));
+            g.drawRoundedRectangle (tabs.reduced (0.0f, 4.0f), 8.0f, 1.0f);
+        }
     }
 
     void resized() override
@@ -8754,6 +8762,7 @@ public:
         headerCompactLevel = headerControlWidth < 780 ? 2 : (headerControlWidth < 920 ? 1 : 0);
         const auto compact = headerCompactLevel > 0;
         const auto tiny = headerCompactLevel > 1;
+        const auto filterbankChrome = workspaceMode == WorkspaceMode::filterbank;
 
         undoButton.setButtonText (tiny ? "U" : "Undo");
         redoButton.setButtonText (tiny ? "R" : "Redo");
@@ -8776,7 +8785,10 @@ public:
         masterGainSlider.setBounds (buttonRow.removeFromLeft (compact ? 82 : 100).reduced (3, 0));
         addGap (5);
         addButton (runButton, compact ? 64 : 72);
-        addButton (stepButton, compact ? 52 : 62);
+        if (filterbankChrome)
+            hideButton (stepButton);
+        else
+            addButton (stepButton, compact ? 52 : 62);
         addButton (stopAllButton, compact ? 62 : 66);
         addButton (panicButton, compact ? 66 : 74);
         addGap (7);
@@ -8787,9 +8799,12 @@ public:
         addButton (redoButton, tiny ? 38 : (compact ? 56 : 66));
         addGap (6);
         addButton (logButton, tiny ? 38 : (compact ? 48 : 54));
-        addButton (arrangementViewButton, tiny ? 54 : (compact ? 66 : 88));
+        if (filterbankChrome)
+            hideButton (arrangementViewButton);
+        else
+            addButton (arrangementViewButton, tiny ? 54 : (compact ? 66 : 88));
 
-        if (buttonRow.getWidth() >= 102)
+        if (! filterbankChrome && buttonRow.getWidth() >= 102)
         {
             addButton (graphFitButton, 38);
             addButton (graphLayoutButton, 58);
@@ -8986,8 +9001,9 @@ public:
         codeCheckLabel.setBounds (codeHeader.reduced (3));
         scriptEditor.setBounds (codePaneInner.reduced (0, 6));
 
-        stateTabs.setVisible (true);
-        if (workspaceMode == WorkspaceMode::fsm || workspaceMode == WorkspaceMode::filterbank)
+        const auto showStateStrip = shouldShowStateStrip();
+        stateTabs.setVisible (showStateStrip);
+        if (showStateStrip)
             stateTabs.setBounds (workspace.removeFromTop (36));
         else
             stateTabs.setBounds ({});
@@ -12752,6 +12768,10 @@ private:
         stateInfoTitle.setText ("State", juce::dontSendNotification);
         nestedSectionTitle.setText ("Nested FSM", juce::dontSendNotification);
         trackSectionTitle.setText ("Tracks", juce::dontSendNotification);
+        stepButton.setVisible (true);
+        arrangementViewButton.setVisible (true);
+        graphFitButton.setVisible (true);
+        graphLayoutButton.setVisible (true);
 
         refreshStateTabs();
         refreshTrackList();
@@ -12877,13 +12897,17 @@ private:
         graph.setVisible (false);
         arrangementStrip.setVisible (false);
         filterbankView.setVisible (true);
-        stateTabs.setVisible (true);
+        stateTabs.setVisible (filterbank.viewMode == FilterbankViewMode::fsm);
         topStateCountLabel.setVisible (true);
         topStateCountMinus.setVisible (true);
         topStateCountEditor.setVisible (true);
         topStateCountPlus.setVisible (true);
         rateSlider.setVisible (false);
         title.setColour (juce::Label::textColourId, accentB().brighter (0.12f));
+        stepButton.setVisible (false);
+        arrangementViewButton.setVisible (false);
+        graphFitButton.setVisible (false);
+        graphLayoutButton.setVisible (false);
         arrangementViewButton.setEnabled (false);
         graphFitButton.setEnabled (false);
         graphLayoutButton.setEnabled (false);
