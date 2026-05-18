@@ -1503,6 +1503,7 @@ public:
     std::function<void (int)> onBandResetToggled;
     std::function<void (int)> onBandStateAdded;
     std::function<void (int)> onBandLaneAdded;
+    std::function<void (int, float)> onBandStatePanChanged;
     std::function<void()> onTopologyPlusFullScreenToggled;
     std::function<void (int, int)> onTopologyPlusStateSelected;
     std::function<void (int, int)> onTopologyPlusStateDoubleClicked;
@@ -1592,6 +1593,18 @@ public:
             return;
 
         topologyPlusPanning = false;
+        overviewPanDragging = false;
+
+        for (const auto& hit : overviewPanHits)
+        {
+            if (hit.bounds.contains (event.position))
+            {
+                overviewPanDragging = true;
+                overviewPanDragBand = hit.bandIndex;
+                updateOverviewPanFromPosition (hit, event.position.x);
+                return;
+            }
+        }
 
         if (octaveButton.contains (event.position))
         {
@@ -1852,6 +1865,18 @@ public:
 
     void mouseDrag (const juce::MouseEvent& event) override
     {
+        if (overviewPanDragging)
+        {
+            for (const auto& hit : overviewPanHits)
+            {
+                if (hit.bandIndex == overviewPanDragBand)
+                {
+                    updateOverviewPanFromPosition (hit, event.position.x);
+                    return;
+                }
+            }
+        }
+
         if (model == nullptr
             || model->viewMode != FilterbankViewMode::topologyPlus
             || topologyPlusFocusedBand >= 0
@@ -1865,6 +1890,8 @@ public:
     void mouseUp (const juce::MouseEvent&) override
     {
         topologyPlusPanning = false;
+        overviewPanDragging = false;
+        overviewPanDragBand = -1;
     }
 
     void mouseWheelMove (const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
@@ -1911,6 +1938,12 @@ private:
         juce::Rectangle<float> bounds;
         int bandIndex = 0;
         BandHitAction action = BandHitAction::select;
+    };
+
+    struct OverviewPanHit
+    {
+        juce::Rectangle<float> bounds;
+        int bandIndex = 0;
     };
 
     enum class TopologyPlusHitKind
@@ -2008,6 +2041,7 @@ private:
     void drawOverview (juce::Graphics& g, juce::Rectangle<float> area)
     {
         bandHits.clear();
+        overviewPanHits.clear();
 
         auto header = area.removeFromTop (28.0f);
         drawOverviewHeader (g, header);
@@ -2064,11 +2098,14 @@ private:
             drawOverviewButton (g, addStateCell.reduced (2.0f, 3.0f), "State +", accentB().withAlpha (0.90f), selected);
             drawOverviewButton (g, addLaneCell.reduced (2.0f, 3.0f), "Lane +", accentA().withAlpha (0.90f), selected);
 
+            auto panCell = cells.removeFromRight (juce::jmin (76.0f, cells.getWidth())).reduced (4.0f, 5.0f);
             auto meterArea = cells.removeFromLeft (juce::jmin (180.0f, cells.getWidth())).reduced (4.0f, 6.0f);
             g.setColour (juce::Colour (0xff080b0f).withAlpha (0.72f));
             g.fillRoundedRectangle (meterArea, 2.0f);
             g.setColour (colour.brighter (0.22f).withAlpha (meter.live ? 0.92f : 0.22f));
             g.fillRoundedRectangle (meterArea.withWidth (meterArea.getWidth() * juce::jlimit (0.0f, 1.0f, meter.peak)), 2.0f);
+            drawOverviewPanControl (g, panCell, averagePanForBandState (band), colour, selected);
+            overviewPanHits.push_back ({ panCell.expanded (2.0f, 4.0f), band.index });
 
             bandHits.push_back ({ clockCell, band.index, BandHitAction::toggleClock });
             bandHits.push_back ({ resetCell, band.index, BandHitAction::toggleReset });
@@ -2093,7 +2130,9 @@ private:
         drawOverviewCell (g, cells.removeFromLeft (46.0f), "Rules", mutedInk().withAlpha (0.72f));
         drawOverviewCell (g, cells.removeFromLeft (48.0f), "Lanes", mutedInk().withAlpha (0.72f));
         drawOverviewCell (g, cells.removeFromLeft (174.0f), "Edit", mutedInk().withAlpha (0.72f));
+        auto panHeader = cells.removeFromRight (76.0f);
         drawOverviewCell (g, cells, "Meter", mutedInk().withAlpha (0.72f));
+        drawOverviewCell (g, panHeader, "Pan", mutedInk().withAlpha (0.72f));
     }
 
     void drawOverviewCell (juce::Graphics& g, juce::Rectangle<float> cell, const juce::String& text, juce::Colour colour)
@@ -2110,6 +2149,68 @@ private:
         g.drawRoundedRectangle (cell.reduced (0.5f), 3.0f, active ? 1.2f : 0.8f);
         g.setColour (active ? ink() : colour);
         g.drawFittedText (text, cell.toNearestInt().reduced (2, 0), juce::Justification::centred, 1);
+    }
+
+    void drawOverviewPanControl (juce::Graphics& g, juce::Rectangle<float> cell, float pan, juce::Colour colour, bool selected)
+    {
+        pan = juce::jlimit (-1.0f, 1.0f, pan);
+        g.setColour (juce::Colour (0xff080b0f).withAlpha (0.72f));
+        g.fillRoundedRectangle (cell, 2.0f);
+
+        const auto centreX = cell.getCentreX();
+        const auto knobX = juce::jmap (pan, -1.0f, 1.0f, cell.getX() + 4.0f, cell.getRight() - 4.0f);
+        g.setColour (hairline().withAlpha (0.46f));
+        g.drawHorizontalLine (juce::roundToInt (cell.getCentreY()), cell.getX() + 4.0f, cell.getRight() - 4.0f);
+        g.setColour (mutedInk().withAlpha (0.34f));
+        g.drawVerticalLine (juce::roundToInt (centreX), cell.getY() + 3.0f, cell.getBottom() - 3.0f);
+        g.setColour (colour.withAlpha (selected ? 0.92f : 0.62f));
+        g.fillEllipse (knobX - 3.2f, cell.getCentreY() - 3.2f, 6.4f, 6.4f);
+
+        g.setFont (juce::FontOptions (7.8f, juce::Font::bold));
+        g.setColour (selected ? ink().withAlpha (0.86f) : mutedInk().withAlpha (0.64f));
+        const auto text = std::abs (pan) < 0.025f ? juce::String ("C")
+                        : (pan < 0.0f ? "L" + juce::String (std::abs (pan), 1)
+                                       : "R" + juce::String (pan, 1));
+        g.drawFittedText (text, cell.toNearestInt().reduced (4, 0), juce::Justification::centredRight, 1);
+    }
+
+    float averagePanForBandState (const FilterBand& band) const
+    {
+        const auto& state = band.machine.state (band.machine.selectedState);
+        if (state.lanes.empty())
+            return 0.0f;
+
+        auto pan = 0.0f;
+        auto count = 0;
+        for (const auto& lane : state.lanes)
+        {
+            if (! lane.enabled || lane.muted)
+                continue;
+
+            pan += lane.pan;
+            ++count;
+        }
+
+        if (count == 0)
+        {
+            for (const auto& lane : state.lanes)
+                pan += lane.pan;
+
+            count = static_cast<int> (state.lanes.size());
+        }
+
+        return juce::jlimit (-1.0f, 1.0f, pan / static_cast<float> (juce::jmax (1, count)));
+    }
+
+    void updateOverviewPanFromPosition (const OverviewPanHit& hit, float x)
+    {
+        if (onBandStatePanChanged == nullptr)
+            return;
+
+        const auto pan = juce::jmap (juce::jlimit (hit.bounds.getX(), hit.bounds.getRight(), x),
+                                     hit.bounds.getX(), hit.bounds.getRight(),
+                                     -1.0f, 1.0f);
+        onBandStatePanChanged (hit.bandIndex, juce::jlimit (-1.0f, 1.0f, pan));
     }
 
     void drawOverviewScrollBar (juce::Graphics& g, juce::Rectangle<float> remainingArea, int maxScroll)
@@ -3299,6 +3400,7 @@ private:
 
     FilterbankModel* model = nullptr;
     std::vector<BandHit> bandHits;
+    std::vector<OverviewPanHit> overviewPanHits;
     std::vector<TopologyPlusHit> topologyPlusHits;
     juce::Rectangle<float> octaveButton;
     juce::Rectangle<float> thirdButton;
@@ -3313,6 +3415,8 @@ private:
     std::vector<TopologyPlusInteractionControlHit> topologyPlusInteractionControls;
     int overviewScroll = 0;
     int overviewVisibleRows = 1;
+    bool overviewPanDragging = false;
+    int overviewPanDragBand = -1;
     int topologyVisibleRows = 1;
     bool topologyPlusFullScreen = false;
     int topologyPlusFocusedBand = -1;
@@ -6828,6 +6932,16 @@ public:
         filterbankView.onBandSelected = [this] (int bandIndex)
         {
             filterbank.selectedBand = juce::jlimit (0, filterbank.getBandCount() - 1, bandIndex);
+            refreshControls();
+        };
+        filterbankView.onBandStatePanChanged = [this] (int bandIndex, float pan)
+        {
+            filterbank.selectedBand = juce::jlimit (0, filterbank.getBandCount() - 1, bandIndex);
+            auto& state = filterbank.selectedMachineRef().state (filterbank.selectedMachineRef().selectedState);
+            for (auto& lane : state.lanes)
+                lane.pan = juce::jlimit (-1.0f, 1.0f, pan);
+
+            markMachineDirty (UndoGroup::continuous);
             refreshControls();
         };
         filterbankView.onViewModeChanged = [this] (FilterbankViewMode mode)
