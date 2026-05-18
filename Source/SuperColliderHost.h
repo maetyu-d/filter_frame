@@ -18,7 +18,7 @@ struct SuperColliderAudioSettings
 {
     juce::String outputDevice;
     double sampleRate = 0.0;
-    int hardwareBufferSize = 64;
+    int hardwareBufferSize = 256;
     int outputChannels = 2;
 
     bool operator== (const SuperColliderAudioSettings& other) const

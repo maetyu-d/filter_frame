@@ -22,7 +22,7 @@ constexpr bool enableHiddenCrossfades = true;
 struct AudioProfile
 {
     double serverLatencySeconds = 0.028;
-    int hardwareBufferSize = 64;
+    int hardwareBufferSize = 256;
     double crossfadeSeconds = 0.006;
 };
 
@@ -884,7 +884,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "};\n"
                "SynthDef(\\wfLaneRouter, { |bus = 0, replyId = 0, wfMasterGain = 0.1|\n"
                "    var sig = In.ar(bus, 2);\n"
-               "    var out = sig * Lag.kr(wfMasterGain.clip(0, 1.5), 0.035);\n"
+               "    var out = sig * Lag.kr(wfMasterGain.clip(0, 1.5), 0.08);\n"
                "    var mono = Mix(out) * 0.5;\n"
                "    var meterTrig = Impulse.kr(30, 0) + Trig1.kr(1, ControlDur.ir);\n"
                "    var rms = Amplitude.kr(mono, 0.004, 0.055).clip(0, 1);\n"
@@ -895,8 +895,8 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "SynthDef(\\wfFrozenPlayer, { |buf = 0, gate = 1, fade = 0.006, wfVol = 1, wfPan = 0, wfLow = 20, wfHigh = 20000, wfMasterGain = 0.1, replyId = 0|\n"
                "    var sig = PlayBuf.ar(2, buf, BufRateScale.kr(buf), loop: 1);\n"
                "    var maxFilterHz = ((SampleRate.ir * 0.5) - 40).clip(80, 20000);\n"
-               "    var low = Lag.kr(wfLow.clip(20, maxFilterHz - 5), 0.012);\n"
-               "    var high = Lag.kr(wfHigh.clip(low + 5, maxFilterHz), 0.012);\n"
+               "    var low = Lag.kr(wfLow.clip(20, maxFilterHz - 5), 0.045);\n"
+               "    var high = Lag.kr(wfHigh.clip(low + 5, maxFilterHz), 0.045);\n"
                "    var env = EnvGen.kr(Env.asr(fade.max(0.001), 1, fade.max(0.001)), gate, doneAction: 2);\n"
                "    var controlled, mono, meterTrig, rms, peak;\n"
                "    3.do {\n"
@@ -904,7 +904,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "        sig = BLowPass4.ar(sig, high, 0.56);\n"
                "    };\n"
                "    sig = LeakDC.ar(sig);\n"
-               "    controlled = Balance2.ar(sig[0], sig[1], Lag.kr(wfPan.clip(-1, 1), 0.02)) * env * Lag.kr(wfVol, 0.02) * Lag.kr(wfMasterGain.clip(0, 1.5), 0.035);\n"
+               "    controlled = Balance2.ar(sig[0], sig[1], Lag.kr(wfPan.clip(-1, 1), 0.05)) * env * Lag.kr(wfVol, 0.05) * Lag.kr(wfMasterGain.clip(0, 1.5), 0.08);\n"
                "    mono = Mix(controlled) * 0.5;\n"
                "    meterTrig = Impulse.kr(30, 0) + Trig1.kr(1, ControlDur.ir);\n"
                "    rms = Amplitude.kr(mono, 0.004, 0.055).clip(0, 1);\n"
@@ -928,12 +928,12 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "};\n"
                "~wfMetered = { |key, sig|\n"
                "    var stereo = sig.asArray;\n"
-               "    var pan = Lag.kr(\\wfPan.kr(~wfPans[key] ? 0), 0.02).clip(-1, 1);\n"
+               "    var pan = Lag.kr(\\wfPan.kr(~wfPans[key] ? 0), 0.05).clip(-1, 1);\n"
                "    var controlled;\n"
                "    stereo = if (stereo.size < 2, { [stereo[0], stereo[0]] }, { [stereo[0], stereo[1]] });\n"
                "    stereo = ~wfApplyBand.(key, stereo);\n"
-               "    controlled = Balance2.ar(stereo[0], stereo[1], pan) * Lag.kr(\\wfVol.kr(~wfVolumes[key] ? 1), 0.02);\n"
-               "    controlled = LeakDC.ar(Limiter.ar(controlled, 0.42, 0.012));\n"
+               "    controlled = Balance2.ar(stereo[0], stereo[1], pan) * Lag.kr(\\wfVol.kr(~wfVolumes[key] ? 1), 0.05);\n"
+               "    controlled = LeakDC.ar(Limiter.ar(controlled, 0.36, 0.025));\n"
                "    Out.ar(~wfLaneBusFor.(key), controlled);\n"
                "    Silent.ar(2);\n"
                "};\n"
@@ -947,7 +947,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "    if (low.notNil and: { high.notNil }) {\n"
                "        initialLow = low.clip(20, 19900);\n"
                "        initialHigh = high.clip(initialLow + 5, 20000);\n"
-               "        edgeLag = 0.012;\n"
+               "        edgeLag = 0.045;\n"
                "        low = Lag.kr(\\wfLow.kr(initialLow), edgeLag).clip(20, maxFilterHz - 5);\n"
                "        high = Lag.kr(\\wfHigh.kr(initialHigh), edgeLag).clip(low + 5, maxFilterHz);\n"
                "        3.do {\n"

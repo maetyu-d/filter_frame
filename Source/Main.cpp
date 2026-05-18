@@ -6105,7 +6105,7 @@ private:
         updated.hardwareBufferSize = scBufferEditor.getText().getIntValue();
         updated.outputChannels = scChannelsEditor.getText().getIntValue();
         updated.sampleRate = updated.sampleRate <= 0.0 ? 0.0 : juce::jlimit (8000.0, 384000.0, updated.sampleRate);
-        updated.hardwareBufferSize = juce::jlimit (16, 4096, updated.hardwareBufferSize <= 0 ? 64 : updated.hardwareBufferSize);
+        updated.hardwareBufferSize = juce::jlimit (16, 4096, updated.hardwareBufferSize <= 0 ? 256 : updated.hardwareBufferSize);
         updated.outputChannels = juce::jlimit (1, 64, updated.outputChannels <= 0 ? 2 : updated.outputChannels);
 
         scSampleRateEditor.setText (updated.sampleRate <= 0.0 ? juce::String() : juce::String (updated.sampleRate, 1), false);
@@ -8033,7 +8033,7 @@ public:
     {
         settings.outputDevice = settings.outputDevice.trim();
         settings.sampleRate = settings.sampleRate <= 0.0 ? 0.0 : juce::jlimit (8000.0, 384000.0, settings.sampleRate);
-        settings.hardwareBufferSize = juce::jlimit (16, 4096, settings.hardwareBufferSize <= 0 ? 64 : settings.hardwareBufferSize);
+        settings.hardwareBufferSize = juce::jlimit (16, 4096, settings.hardwareBufferSize <= 0 ? 256 : settings.hardwareBufferSize);
         settings.outputChannels = juce::jlimit (1, 64, settings.outputChannels <= 0 ? 2 : settings.outputChannels);
 
         if (scAudioSettings == settings)
@@ -9085,10 +9085,12 @@ private:
                                                                                          static_cast<bool> (parsed.getProperty ("arrangementViewVisible", false)) ? 1 : 0)));
         scAudioSettings.outputDevice = parsed.getProperty ("scOutputDevice", {}).toString().trim();
         scAudioSettings.sampleRate = static_cast<double> (parsed.getProperty ("scSampleRate", 0.0));
-        scAudioSettings.hardwareBufferSize = static_cast<int> (parsed.getProperty ("scHardwareBufferSize", 64));
+        scAudioSettings.hardwareBufferSize = static_cast<int> (parsed.getProperty ("scHardwareBufferSize", 256));
         scAudioSettings.outputChannels = static_cast<int> (parsed.getProperty ("scOutputChannels", 2));
         scAudioSettings.sampleRate = scAudioSettings.sampleRate <= 0.0 ? 0.0 : juce::jlimit (8000.0, 384000.0, scAudioSettings.sampleRate);
-        scAudioSettings.hardwareBufferSize = juce::jlimit (16, 4096, scAudioSettings.hardwareBufferSize <= 0 ? 64 : scAudioSettings.hardwareBufferSize);
+        if (scAudioSettings.hardwareBufferSize <= 64)
+            scAudioSettings.hardwareBufferSize = 256;
+        scAudioSettings.hardwareBufferSize = juce::jlimit (16, 4096, scAudioSettings.hardwareBufferSize <= 0 ? 256 : scAudioSettings.hardwareBufferSize);
         scAudioSettings.outputChannels = juce::jlimit (1, 64, scAudioSettings.outputChannels <= 0 ? 2 : scAudioSettings.outputChannels);
         host.setAudioSettings (scAudioSettings);
         exportSettings.range = parsed.getProperty ("exportRange", "cycle").toString();
