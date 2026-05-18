@@ -6860,10 +6860,9 @@ public:
         continueButton.setBounds (topActions.removeFromLeft (actionWidth).reduced (0, 2));
 
         auto secondActions = actions.removeFromTop (40);
-        const auto demoWidth = juce::jmin (180, (secondActions.getWidth() - 8) / 2);
-        simpleButton.setBounds (secondActions.removeFromLeft (demoWidth).reduced (0, 2));
+        simpleButton.setBounds (secondActions.removeFromLeft (actionWidth).reduced (0, 2));
         secondActions.removeFromLeft (8);
-        complexButton.setBounds (secondActions.removeFromLeft (demoWidth).reduced (0, 2));
+        complexButton.setBounds (secondActions.removeFromLeft (actionWidth).reduced (0, 2));
 
         panel.removeFromTop (12);
         recentTitle.setBounds (panel.removeFromTop (24));
