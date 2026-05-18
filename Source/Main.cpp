@@ -1596,7 +1596,8 @@ public:
         if (octaveButton.contains (event.position))
         {
             if (onViewModeChanged)
-                onViewModeChanged (FilterbankViewMode::octave);
+                onViewModeChanged (model->viewMode == FilterbankViewMode::octave ? FilterbankViewMode::thirdOctave
+                                                                                  : FilterbankViewMode::octave);
             return;
         }
 
