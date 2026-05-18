@@ -1503,6 +1503,7 @@ public:
     std::function<void (int)> onBandResetToggled;
     std::function<void (int)> onBandStateAdded;
     std::function<void (int)> onBandLaneAdded;
+    std::function<void (int, int)> onBandSpanAdjusted;
     std::function<void (int, float)> onBandStatePanChanged;
     std::function<void()> onTopologyPlusFullScreenToggled;
     std::function<void (int, int)> onTopologyPlusStateSelected;
@@ -1808,6 +1809,14 @@ public:
                         if (onBandLaneAdded)
                             onBandLaneAdded (hit.bandIndex);
                         break;
+                    case BandHitAction::spanDown:
+                        if (onBandSpanAdjusted)
+                            onBandSpanAdjusted (hit.bandIndex, -1);
+                        break;
+                    case BandHitAction::spanUp:
+                        if (onBandSpanAdjusted)
+                            onBandSpanAdjusted (hit.bandIndex, 1);
+                        break;
                 }
                 return;
             }
@@ -1930,7 +1939,9 @@ private:
         toggleClock,
         toggleReset,
         addState,
-        addLane
+        addLane,
+        spanDown,
+        spanUp
     };
 
     struct BandHit
@@ -3270,11 +3281,13 @@ private:
             const auto selected = model->selectedBand >= first && model->selectedBand <= last;
             const auto meter = aggregateMeterForBandRange (first, last);
             const auto activeCount = activeLaneCountForBandRange (first, last);
+            const auto spanControlBand = selected ? model->selectedBand : first;
             drawBand (g, area, first, name, lowHz, highHz, selected, static_cast<float> (group % 3) * 0.025f,
                       "S" + juce::String (model->bands[static_cast<size_t> (first)].machine.selectedState + 1),
                       activeCount,
                       meter,
-                      bandRangeHasFreeRun (first, last));
+                      bandRangeHasFreeRun (first, last),
+                      spanControlBand);
         }
     }
 
@@ -3284,11 +3297,12 @@ private:
                   "S" + juce::String (band.machine.selectedState + 1),
                   activeLaneCountForBand (band),
                   aggregateMeterForBand (band),
-                  ! band.syncToFilterbankClock);
+                  ! band.syncToFilterbankClock,
+                  band.index);
     }
 
     void drawBand (juce::Graphics& g, juce::Rectangle<float> area, int bandIndex, const juce::String& bandName, double lowHz, double highHz, bool selected, float lift,
-                   const juce::String& stateText, int activeLaneCount, LaneMeterValues meter, bool freeRunning)
+                   const juce::String& stateText, int activeLaneCount, LaneMeterValues meter, bool freeRunning, int spanControlBandIndex = -1)
     {
         const auto x1 = logX (lowHz, area);
         const auto x2 = logX (highHz, area);
@@ -3334,7 +3348,59 @@ private:
             g.drawFittedText (badgeText, r.reduced (6.0f).removeFromTop (16.0f).toNearestInt(), juce::Justification::centredRight, 1);
         }
 
+        if (selected && spanControlBandIndex >= 0)
+            drawBandSpanControls (g, r, spanControlBandIndex, colour);
+
         bandHits.push_back ({ r.expanded (2.0f), bandIndex, BandHitAction::select });
+    }
+
+    void drawBandSpanControls (juce::Graphics& g, juce::Rectangle<float> bandArea, int bandIndex, juce::Colour colour)
+    {
+        if (model == nullptr || bandIndex < 0 || bandIndex >= model->getBandCount())
+            return;
+
+        auto& band = model->bands[static_cast<size_t> (bandIndex)];
+        if (model->maxSpanForBand (bandIndex) <= 1)
+            return;
+
+        const auto controlWidth = 86.0f;
+        const auto controlHeight = 18.0f;
+        juce::Rectangle<float> controls;
+        if (bandArea.getWidth() >= controlWidth + 10.0f && bandArea.getHeight() >= 42.0f)
+        {
+            controls = bandArea.reduced (5.0f).removeFromBottom (controlHeight).removeFromRight (controlWidth);
+        }
+        else
+        {
+            auto x = juce::jlimit (0.0f, static_cast<float> (getWidth()) - controlWidth, bandArea.getCentreX() - controlWidth * 0.5f);
+            auto y = juce::jmax (bandArea.getY() + 20.0f, bandArea.getBottom() - controlHeight - 5.0f);
+            controls = { x, y, controlWidth, controlHeight };
+        }
+
+        auto minus = controls.removeFromLeft (21.0f);
+        auto value = controls.removeFromLeft (controls.getWidth() - 21.0f);
+        auto plus = controls;
+
+        g.setColour (juce::Colour (0xff05080c).withAlpha (0.74f));
+        g.fillRoundedRectangle (minus, 3.0f);
+        g.fillRoundedRectangle (value.reduced (2.0f, 0.0f), 3.0f);
+        g.fillRoundedRectangle (plus, 3.0f);
+
+        g.setColour (colour.withAlpha (0.82f));
+        g.drawRoundedRectangle (minus.reduced (0.5f), 3.0f, 0.9f);
+        g.drawRoundedRectangle (value.reduced (2.5f, 0.5f), 3.0f, 0.9f);
+        g.drawRoundedRectangle (plus.reduced (0.5f), 3.0f, 0.9f);
+
+        g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
+        g.setColour (band.bandSpan <= 1 ? mutedInk().withAlpha (0.46f) : ink().withAlpha (0.92f));
+        g.drawFittedText ("-", minus.toNearestInt(), juce::Justification::centred, 1);
+        g.setColour (ink());
+        g.drawFittedText (juce::String (band.bandSpan) + "b", value.toNearestInt(), juce::Justification::centred, 1);
+        g.setColour (band.bandSpan >= model->maxSpanForBand (bandIndex) ? mutedInk().withAlpha (0.46f) : ink().withAlpha (0.92f));
+        g.drawFittedText ("+", plus.toNearestInt(), juce::Justification::centred, 1);
+
+        bandHits.push_back ({ minus, bandIndex, BandHitAction::spanDown });
+        bandHits.push_back ({ plus, bandIndex, BandHitAction::spanUp });
     }
 
     int activeLaneCountForBand (const FilterBand& band) const
@@ -7139,6 +7205,11 @@ public:
         filterbankView.onBandLaneAdded = [this] (int bandIndex)
         {
             addLaneToFilterbankBand (bandIndex);
+        };
+        filterbankView.onBandSpanAdjusted = [this] (int bandIndex, int delta)
+        {
+            filterbank.selectedBand = juce::jlimit (0, filterbank.getBandCount() - 1, bandIndex);
+            setSelectedBandSpan (filterbank.selectedBandRef().bandSpan + delta);
         };
 
         runButton.onClick = [this]
