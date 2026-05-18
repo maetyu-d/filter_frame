@@ -6777,11 +6777,11 @@ public:
         recentTitle.setColour (juce::Label::textColourId, mutedInk());
         recentTitle.setJustificationType (juce::Justification::centredLeft);
 
-        newProjectButton.setButtonText ("New Project");
+        newProjectButton.setButtonText ("New");
         simpleButton.setButtonText ("Simple Demo");
         complexButton.setButtonText ("Complex Demo");
         continueButton.setButtonText ("Continue");
-        loadButton.setButtonText ("Load Project");
+        loadButton.setButtonText ("Load");
 
         newProjectButton.onClick = [this] { if (onNewProject) onNewProject(); };
         simpleButton.onClick = [this] { if (onSimpleDemo) onSimpleDemo(); };
@@ -6852,16 +6852,18 @@ public:
         panel.removeFromTop (10);
         auto actions = panel.removeFromTop (84);
         auto topActions = actions.removeFromTop (40);
-        newProjectButton.setBounds (topActions.removeFromLeft (150).reduced (0, 2));
+        const auto actionWidth = juce::jmin (150, (topActions.getWidth() - 16) / 3);
+        newProjectButton.setBounds (topActions.removeFromLeft (actionWidth).reduced (0, 2));
         topActions.removeFromLeft (8);
-        loadButton.setBounds (topActions.removeFromLeft (150).reduced (0, 2));
+        loadButton.setBounds (topActions.removeFromLeft (actionWidth).reduced (0, 2));
         topActions.removeFromLeft (8);
-        complexButton.setBounds (topActions.removeFromLeft (126).reduced (0, 2));
+        continueButton.setBounds (topActions.removeFromLeft (actionWidth).reduced (0, 2));
 
         auto secondActions = actions.removeFromTop (40);
-        simpleButton.setBounds (secondActions.removeFromLeft (150).reduced (0, 2));
+        const auto demoWidth = juce::jmin (180, (secondActions.getWidth() - 8) / 2);
+        simpleButton.setBounds (secondActions.removeFromLeft (demoWidth).reduced (0, 2));
         secondActions.removeFromLeft (8);
-        continueButton.setBounds (secondActions.removeFromLeft (126).reduced (0, 2));
+        complexButton.setBounds (secondActions.removeFromLeft (demoWidth).reduced (0, 2));
 
         panel.removeFromTop (12);
         recentTitle.setBounds (panel.removeFromTop (24));
