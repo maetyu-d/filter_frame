@@ -6862,7 +6862,7 @@ public:
         masterGainLabel.setColour (juce::Label::textColourId, mutedInk());
         masterGainLabel.setJustificationType (juce::Justification::centredLeft);
         masterGainSlider.setRange (0.0, 1.5, 0.01);
-        masterGainSlider.setValue (0.5, juce::dontSendNotification);
+        masterGainSlider.setValue (0.1, juce::dontSendNotification);
         masterGainSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 22);
         masterGainSlider.setTextValueSuffix ("x");
         masterGainSlider.onValueChange = [this]
