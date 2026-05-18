@@ -9100,9 +9100,12 @@ private:
         exportSettings.sampleFormat = parsed.getProperty ("exportSampleFormat", "int16").toString();
         if (exportSettings.sampleFormat != "int24" && exportSettings.sampleFormat != "float")
             exportSettings.sampleFormat = "int16";
-        const auto masterGain = juce::jlimit (0.0, 1.5, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
-        masterGainSlider.setValue (masterGain, juce::dontSendNotification);
-        host.setMasterGain (static_cast<float> (masterGain));
+        if (! loadingProjectInternally)
+        {
+            const auto masterGain = juce::jlimit (0.0, 1.5, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
+            masterGainSlider.setValue (masterGain, juce::dontSendNotification);
+            host.setMasterGain (static_cast<float> (masterGain));
+        }
     }
 
     void restoreLastProject()
@@ -9531,9 +9534,12 @@ private:
 
         const auto rate = static_cast<double> (parsed.getProperty ("rate", rateSlider.getValue()));
         rateSlider.setValue (juce::jlimit (0.2, 4.0, rate), juce::dontSendNotification);
-        const auto masterGain = juce::jlimit (0.0, 1.5, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
-        masterGainSlider.setValue (masterGain, juce::dontSendNotification);
-        host.setMasterGain (static_cast<float> (masterGain));
+        if (! loadingProjectInternally)
+        {
+            const auto masterGain = juce::jlimit (0.0, 1.5, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
+            masterGainSlider.setValue (masterGain, juce::dontSendNotification);
+            host.setMasterGain (static_cast<float> (masterGain));
+        }
         machineStack.clear();
         activeMachine = &machine;
         inspectedMachine = &machine;
@@ -9820,9 +9826,12 @@ private:
 
         const auto rate = static_cast<double> (parsed.getProperty ("rate", rateSlider.getValue()));
         rateSlider.setValue (juce::jlimit (0.2, 4.0, rate), juce::dontSendNotification);
-        const auto masterGain = juce::jlimit (0.0, 1.5, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
-        masterGainSlider.setValue (masterGain, juce::dontSendNotification);
-        host.setMasterGain (static_cast<float> (masterGain));
+        if (! loadingProjectInternally)
+        {
+            const auto masterGain = juce::jlimit (0.0, 1.5, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
+            masterGainSlider.setValue (masterGain, juce::dontSendNotification);
+            host.setMasterGain (static_cast<float> (masterGain));
+        }
         machineStack.clear();
         activeMachine = &machine;
         inspectedMachine = &machine;
