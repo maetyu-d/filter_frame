@@ -56,6 +56,16 @@ struct Lane
     juce::String frozenAudioPath;
     bool playing = false;
     int preparedBridge = -1;
+
+    struct Automation
+    {
+        juce::String parameter;
+        juce::String language { "fabric" };
+        juce::String script;
+        bool enabled = false;
+    };
+
+    std::vector<Automation> automations;
 };
 
 struct LaneSnapshot

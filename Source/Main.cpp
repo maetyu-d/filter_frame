@@ -5045,6 +5045,7 @@ public:
     std::function<void (int, float)> onVolumeChanged;
     std::function<void (int, float)> onGainChanged;
     std::function<void (int, float)> onPanChanged;
+    std::function<void (int, juce::String)> onAutomationRequested;
 
     MixerComponent()
     {
@@ -5113,8 +5114,20 @@ public:
             const auto volumeArea = getVolumeBounds (row);
             const auto gainArea = getGainBounds (row);
             const auto panArea = getPanBounds (row);
+            const auto meterAutomationDot = getMeterAutomationDotBounds (row);
+            const auto panAutomationDot = getPanAutomationDotBounds (row);
 
-            if (volumeArea.contains (event.getPosition()))
+            if (meterAutomationDot.contains (event.getPosition()))
+            {
+                if (onAutomationRequested)
+                    onAutomationRequested (i, "meter");
+            }
+            else if (panAutomationDot.contains (event.getPosition()))
+            {
+                if (onAutomationRequested)
+                    onAutomationRequested (i, "pan");
+            }
+            else if (volumeArea.contains (event.getPosition()))
             {
                 draggingVolumeIndex = i;
                 updateVolumeFromMouse (i, event.position.x);
@@ -5247,6 +5260,7 @@ private:
         drawToggle (g, buttons.freeze, freezeText, lane.frozen || lane.freezeInProgress, lane.freezeStale ? graphColour (index, 4) : graphColour (index, 2));
 
         auto volumeArea = getVolumeBounds (row);
+        drawAutomationDot (g, getMeterAutomationDotBounds (row), graphColour (index, 2), hasAutomationFor (lane, "meter"), lane.enabled);
         const auto clipped = juce::jlimit (0.0f, 1.0f, lane.volume);
         const auto gain = juce::jlimit (0.0f, 2.0f, lane.gain);
         const auto pan = juce::jlimit (-1.0f, 1.0f, lane.pan);
@@ -5281,7 +5295,26 @@ private:
         auto gainArea = getGainBounds (row);
         auto panArea = getPanBounds (row);
         drawSmallMixStrip (g, gainArea, "gain", gain / 2.0f, "x" + juce::String (gain, 2), laneColour, lane.enabled);
+        drawAutomationDot (g, getPanAutomationDotBounds (row), graphColour (index, 1), hasAutomationFor (lane, "pan"), lane.enabled);
         drawPanStrip (g, panArea, pan, laneColour, lane.enabled);
+    }
+
+    static bool hasAutomationFor (const Lane& lane, const juce::String& parameter)
+    {
+        for (const auto& automation : lane.automations)
+            if (automation.parameter == parameter && automation.enabled && automation.script.trim().isNotEmpty())
+                return true;
+
+        return false;
+    }
+
+    void drawAutomationDot (juce::Graphics& g, juce::Rectangle<int> bounds, juce::Colour colour, bool active, bool enabled) const
+    {
+        auto dot = bounds.toFloat().withSizeKeepingCentre (8.0f, 8.0f);
+        g.setColour ((active ? colour : colour.withMultipliedSaturation (0.55f)).withAlpha (enabled ? (active ? 0.94f : 0.46f) : 0.18f));
+        g.fillEllipse (dot);
+        g.setColour (active ? ink().withAlpha (0.86f) : juce::Colour (0xff080b0f).withAlpha (0.88f));
+        g.drawEllipse (dot.expanded (1.0f), active ? 1.2f : 0.8f);
     }
 
     void drawSmallMixStrip (juce::Graphics& g, juce::Rectangle<int> area, const juce::String& label, float normalised, const juce::String& value, juce::Colour colour, bool enabled) const
@@ -5357,7 +5390,9 @@ private:
     juce::Rectangle<int> getVolumeBounds (juce::Rectangle<int> row) const
     {
         auto lower = row.reduced (10, 5).removeFromBottom (34);
-        return lower.removeFromTop (17);
+        auto meter = lower.removeFromTop (17);
+        meter.removeFromLeft (13);
+        return meter;
     }
 
     juce::Rectangle<int> getGainBounds (juce::Rectangle<int> row) const
@@ -5370,7 +5405,22 @@ private:
     {
         auto lower = row.reduced (10, 5).removeFromBottom (17);
         lower.removeFromLeft (lower.getWidth() / 2);
-        return lower.reduced (5, 1);
+        auto pan = lower.reduced (5, 1);
+        pan.removeFromLeft (13);
+        return pan;
+    }
+
+    juce::Rectangle<int> getMeterAutomationDotBounds (juce::Rectangle<int> row) const
+    {
+        auto lower = row.reduced (10, 5).removeFromBottom (34);
+        return lower.removeFromTop (17).removeFromLeft (13).withSizeKeepingCentre (12, 12);
+    }
+
+    juce::Rectangle<int> getPanAutomationDotBounds (juce::Rectangle<int> row) const
+    {
+        auto lower = row.reduced (10, 5).removeFromBottom (17);
+        lower.removeFromLeft (lower.getWidth() / 2);
+        return lower.reduced (5, 1).removeFromLeft (13).withSizeKeepingCentre (12, 12);
     }
 
     ButtonBounds getButtonBounds (juce::Rectangle<int> row) const
@@ -5818,6 +5868,156 @@ private:
 
         return 0;
     }
+};
+
+class AutomationCodeWindow final : public juce::DocumentWindow
+{
+public:
+    std::function<void (juce::String, juce::String, bool)> onSave;
+
+    AutomationCodeWindow (const juce::String& laneName,
+                          const juce::String& parameter,
+                          const juce::String& language,
+                          const juce::String& script,
+                          bool enabled)
+        : DocumentWindow ("Automation", backgroundTop(), DocumentWindow::closeButton),
+          panel (laneName, parameter, language, script, enabled)
+    {
+        panel.onSave = [this] (juce::String newLanguage, juce::String newScript, bool newEnabled)
+        {
+            if (onSave)
+                onSave (std::move (newLanguage), std::move (newScript), newEnabled);
+            closeButtonPressed();
+        };
+
+        setUsingNativeTitleBar (true);
+        setContentNonOwned (&panel, true);
+        centreWithSize (720, 520);
+        setResizable (true, true);
+        setVisible (true);
+    }
+
+    void closeButtonPressed() override
+    {
+        setVisible (false);
+    }
+
+private:
+    class Panel final : public juce::Component
+    {
+    public:
+        std::function<void (juce::String, juce::String, bool)> onSave;
+
+        Panel (const juce::String& laneName,
+               const juce::String& parameterToEdit,
+               const juce::String& language,
+               const juce::String& script,
+               bool enabled)
+            : parameter (parameterToEdit),
+              editor (document, &tokeniser)
+        {
+            title.setText (laneName + " / " + parameterToEdit + " automation", juce::dontSendNotification);
+            title.setFont (juce::FontOptions (15.0f, juce::Font::bold));
+            title.setColour (juce::Label::textColourId, ink());
+            addAndMakeVisible (title);
+
+            languageBox.addItem ("Fabric", 1);
+            languageBox.addItem ("SuperCollider", 2);
+            languageBox.setSelectedId (language == "supercollider" ? 2 : 1, juce::dontSendNotification);
+            addAndMakeVisible (languageBox);
+
+            enabledToggle.setButtonText ("Enabled");
+            enabledToggle.setToggleState (enabled, juce::dontSendNotification);
+            enabledToggle.setColour (juce::ToggleButton::textColourId, mutedInk());
+            addAndMakeVisible (enabledToggle);
+
+            hint.setText ("Return a value for " + parameterToEdit + ". Fabric scripts follow the MMVE-style control lane; SuperCollider scripts can use tempo/time values.", juce::dontSendNotification);
+            hint.setColour (juce::Label::textColourId, mutedInk().withAlpha (0.78f));
+            hint.setFont (juce::FontOptions (11.0f, juce::Font::plain));
+            addAndMakeVisible (hint);
+
+            document.replaceAllContent (script.isNotEmpty() ? script : defaultScriptFor (parameterToEdit, language));
+            editor.setLineNumbersShown (true);
+            editor.setTabSize (4, true);
+            editor.setScrollbarThickness (9);
+            editor.setFont (juce::Font (juce::FontOptions (14.0f)));
+            editor.setColour (juce::CodeEditorComponent::backgroundColourId, juce::Colour (0xff101319));
+            editor.setColour (juce::CodeEditorComponent::defaultTextColourId, ink());
+            editor.setColour (juce::CodeEditorComponent::highlightColourId, accentB().withAlpha (0.20f));
+            editor.setColour (juce::CodeEditorComponent::lineNumberBackgroundId, juce::Colour (0xff14191f));
+            editor.setColour (juce::CodeEditorComponent::lineNumberTextId, mutedInk().withAlpha (0.52f));
+            editor.setColourScheme (tokeniser.getDefaultColourScheme());
+            addAndMakeVisible (editor);
+
+            saveButton.setButtonText ("Save");
+            saveButton.onClick = [this]
+            {
+                if (onSave)
+                    onSave (languageBox.getSelectedId() == 2 ? "supercollider" : "fabric",
+                            document.getAllContent(),
+                            enabledToggle.getToggleState());
+            };
+            addAndMakeVisible (saveButton);
+
+            cancelButton.setButtonText ("Cancel");
+            cancelButton.onClick = [this]
+            {
+                if (auto* window = findParentComponentOfClass<AutomationCodeWindow>())
+                    window->closeButtonPressed();
+            };
+            addAndMakeVisible (cancelButton);
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            g.fillAll (backgroundTop());
+            auto panelBounds = getLocalBounds().toFloat().reduced (14.0f);
+            g.setColour (panelFill());
+            g.fillRoundedRectangle (panelBounds, 7.0f);
+            g.setColour (hairline().withAlpha (0.35f));
+            g.drawRoundedRectangle (panelBounds.reduced (0.5f), 7.0f, 1.0f);
+        }
+
+        void resized() override
+        {
+            auto area = getLocalBounds().reduced (24);
+            auto header = area.removeFromTop (34);
+            title.setBounds (header.removeFromLeft (juce::jmax (200, header.getWidth() - 280)));
+            languageBox.setBounds (header.removeFromLeft (142).reduced (4, 3));
+            enabledToggle.setBounds (header.reduced (4, 2));
+            hint.setBounds (area.removeFromTop (28));
+            auto buttons = area.removeFromBottom (38);
+            cancelButton.setBounds (buttons.removeFromRight (92).reduced (4));
+            saveButton.setBounds (buttons.removeFromRight (92).reduced (4));
+            editor.setBounds (area.reduced (0, 8));
+        }
+
+    private:
+        static juce::String defaultScriptFor (const juce::String& parameter, const juce::String& language)
+        {
+            if (language == "supercollider")
+                return parameter == "pan"
+                    ? "// return -1..1\nSinOsc.kr((~wfTempoHz ? 1) * 0.25).range(-0.35, 0.35);"
+                    : "// return 0..1\nLFNoise1.kr((~wfTempoHz ? 1) * 0.5).range(0.2, 0.85);";
+
+            return parameter == "pan"
+                ? "value = sine(rate: 0.25).scale(-0.35, 0.35)"
+                : "value = envelope(points: [0.2, 0.85, 0.45], beats: 4)";
+        }
+
+        juce::String parameter;
+        SuperColliderTokeniser tokeniser;
+        juce::CodeDocument document;
+        SuperColliderCodeEditor editor;
+        juce::Label title;
+        juce::Label hint;
+        juce::ComboBox languageBox;
+        juce::ToggleButton enabledToggle;
+        juce::TextButton saveButton;
+        juce::TextButton cancelButton;
+    };
+
+    Panel panel;
 };
 
 struct AudioExportSettings
@@ -7566,6 +7766,17 @@ public:
             setInspectorLanePan (newIndex, pan);
         };
 
+        mixer.onAutomationRequested = [this] (int newIndex, juce::String parameter)
+        {
+            if (workspaceMode == WorkspaceMode::filterbank)
+            {
+                openFilterbankLaneAutomation (newIndex, parameter);
+                return;
+            }
+
+            openInspectorLaneAutomation (newIndex, parameter);
+        };
+
         codeDocument.addListener (this);
         scriptEditor.setLineNumbersShown (true);
         scriptEditor.setTabSize (4, true);
@@ -9310,6 +9521,17 @@ private:
         object->setProperty ("frozen", lane.frozen);
         object->setProperty ("freezeStale", lane.freezeStale);
         object->setProperty ("frozenAudioPath", lane.frozenAudioPath);
+        juce::Array<juce::var> automations;
+        for (const auto& automation : lane.automations)
+        {
+            auto automationObject = new juce::DynamicObject();
+            automationObject->setProperty ("parameter", automation.parameter);
+            automationObject->setProperty ("language", automation.language);
+            automationObject->setProperty ("script", automation.script);
+            automationObject->setProperty ("enabled", automation.enabled);
+            automations.add (automationObject);
+        }
+        object->setProperty ("automations", automations);
         return object;
     }
 
@@ -9694,6 +9916,23 @@ private:
         lane.frozen = static_cast<bool> (value.getProperty ("frozen", false));
         lane.freezeStale = static_cast<bool> (value.getProperty ("freezeStale", false));
         lane.frozenAudioPath = resolveProjectMediaPathForLoad (value.getProperty ("frozenAudioPath", {}).toString());
+        lane.automations.clear();
+        if (auto* automations = value.getProperty ("automations", {}).getArray())
+        {
+            for (const auto& automationVar : *automations)
+            {
+                if (! automationVar.isObject())
+                    continue;
+
+                Lane::Automation automation;
+                automation.parameter = automationVar.getProperty ("parameter", {}).toString();
+                automation.language = automationVar.getProperty ("language", "fabric").toString();
+                automation.script = automationVar.getProperty ("script", {}).toString();
+                automation.enabled = static_cast<bool> (automationVar.getProperty ("enabled", false));
+                if (automation.parameter.isNotEmpty())
+                    lane.automations.push_back (std::move (automation));
+            }
+        }
         if (lane.frozen && lane.frozenAudioPath.isNotEmpty() && ! juce::File (lane.frozenAudioPath).existsAsFile())
             lane.freezeStale = true;
         lane.freezeInProgress = false;
@@ -11800,6 +12039,93 @@ private:
         refreshControls();
     }
 
+    static Lane::Automation* automationForParameter (Lane& lane, const juce::String& parameter)
+    {
+        for (auto& automation : lane.automations)
+            if (automation.parameter == parameter)
+                return &automation;
+
+        return nullptr;
+    }
+
+    void setLaneAutomation (Lane& lane,
+                            const juce::String& parameter,
+                            const juce::String& language,
+                            const juce::String& script,
+                            bool enabled)
+    {
+        auto* automation = automationForParameter (lane, parameter);
+        if (automation == nullptr)
+        {
+            Lane::Automation created;
+            created.parameter = parameter;
+            lane.automations.push_back (std::move (created));
+            automation = &lane.automations.back();
+        }
+
+        automation->language = language == "supercollider" ? "supercollider" : "fabric";
+        automation->script = script;
+        automation->enabled = enabled;
+        lane.preparedBridge = -1;
+    }
+
+    void openAutomationWindowForLane (Lane& lane,
+                                      const juce::String& parameter,
+                                      std::function<void (juce::String, juce::String, bool)> saveHandler)
+    {
+        auto language = juce::String ("fabric");
+        auto script = juce::String();
+        auto enabled = false;
+        if (auto* automation = automationForParameter (lane, parameter))
+        {
+            language = automation->language;
+            script = automation->script;
+            enabled = automation->enabled;
+        }
+
+        automationWindow = std::make_unique<AutomationCodeWindow> (lane.name, parameter, language, script, enabled);
+        automationWindow->onSave = std::move (saveHandler);
+        automationWindow->toFront (true);
+    }
+
+    void openFilterbankLaneAutomation (int newIndex, const juce::String& parameter)
+    {
+        auto& bandMachine = filterbank.selectedMachineRef();
+        bandMachine.selectedLane = juce::jlimit (0, bandMachine.getLaneCount (bandMachine.selectedState) - 1, newIndex);
+        auto& lane = bandMachine.selectedLaneRef();
+        const auto laneId = lane.id;
+
+        openAutomationWindowForLane (lane, parameter, [this, laneId, parameter] (juce::String language, juce::String script, bool enabled)
+        {
+            if (auto* laneToEdit = findLaneById (filterbank.selectedMachineRef(), laneId))
+            {
+                setLaneAutomation (*laneToEdit, parameter, language, script, enabled);
+                markMachineDirty();
+                syncFilterbankPlayback();
+                refreshControls();
+            }
+        });
+    }
+
+    void openInspectorLaneAutomation (int newIndex, const juce::String& parameter)
+    {
+        auto& inspected = currentInspectorMachine();
+        inspected.selectedLane = juce::jlimit (0, inspected.getLaneCount (inspected.selectedState) - 1, newIndex);
+        auto& lane = inspected.selectedLaneRef();
+        const auto laneId = lane.id;
+
+        openAutomationWindowForLane (lane, parameter, [this, laneId, parameter] (juce::String language, juce::String script, bool enabled)
+        {
+            if (auto* laneToEdit = findLaneById (machine, laneId))
+            {
+                setLaneAutomation (*laneToEdit, parameter, language, script, enabled);
+                markMachineDirty();
+                applyAllMixToHost();
+                refreshControls();
+            }
+        });
+    }
+
     void setInspectorLaneVolume (int newIndex, float volume)
     {
         auto& inspected = currentInspectorMachine();
@@ -12369,6 +12695,7 @@ private:
     std::unordered_map<std::string, LaneMeterState> laneMeters;
     std::unique_ptr<juce::FileChooser> projectChooser;
     std::unique_ptr<juce::AlertWindow> linkLabelEditor;
+    std::unique_ptr<AutomationCodeWindow> automationWindow;
     juce::File currentProjectFile;
     juce::File loadingProjectDirectory;
     ProjectMediaStatus cachedProjectMediaStatus;
