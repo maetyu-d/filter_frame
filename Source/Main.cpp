@@ -6742,177 +6742,139 @@ public:
     std::function<void()> onComplexDemo;
     std::function<void()> onContinue;
     std::function<void()> onLoad;
+    std::function<void(int)> onRecentProject;
 
     WelcomeComponent()
     {
+        addAndMakeVisible (titleLabel);
+        addAndMakeVisible (subtitleLabel);
+        addAndMakeVisible (recentTitle);
         addAndMakeVisible (simpleButton);
         addAndMakeVisible (complexButton);
         addAndMakeVisible (continueButton);
         addAndMakeVisible (loadButton);
 
-        simpleButton.setButtonText ("Simple");
-        complexButton.setButtonText ("Complex");
-        continueButton.setButtonText ("Continue");
-        loadButton.setButtonText ("Load");
+        titleLabel.setText ("ff::", juce::dontSendNotification);
+        titleLabel.setFont (juce::FontOptions (30.0f, juce::Font::bold));
+        titleLabel.setColour (juce::Label::textColourId, ink());
+        titleLabel.setJustificationType (juce::Justification::centredLeft);
 
-        stylePrimaryButton (complexButton, accentB());
-        styleButton (simpleButton, accentA());
-        styleButton (continueButton, mutedInk());
-        styleButton (loadButton, mutedInk());
+        subtitleLabel.setText ("Start a filterbank, open a project, or continue the restored session.", juce::dontSendNotification);
+        subtitleLabel.setFont (juce::FontOptions (13.5f));
+        subtitleLabel.setColour (juce::Label::textColourId, mutedInk());
+        subtitleLabel.setJustificationType (juce::Justification::centredLeft);
+
+        recentTitle.setText ("Recent projects", juce::dontSendNotification);
+        recentTitle.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+        recentTitle.setColour (juce::Label::textColourId, mutedInk());
+        recentTitle.setJustificationType (juce::Justification::centredLeft);
+
+        simpleButton.setButtonText ("Simple Demo");
+        complexButton.setButtonText ("Complex Demo");
+        continueButton.setButtonText ("Continue");
+        loadButton.setButtonText ("Load Project");
 
         simpleButton.onClick = [this] { if (onSimpleDemo) onSimpleDemo(); };
         complexButton.onClick = [this] { if (onComplexDemo) onComplexDemo(); };
         continueButton.onClick = [this] { if (onContinue) onContinue(); };
         loadButton.onClick = [this] { if (onLoad) onLoad(); };
+
+        for (int i = 0; i < static_cast<int> (recentButtons.size()); ++i)
+        {
+            auto& button = recentButtons[static_cast<size_t> (i)];
+            addAndMakeVisible (button);
+            button.onClick = [this, i] { if (onRecentProject) onRecentProject (i); };
+            button.setVisible (false);
+        }
+    }
+
+    void setRecentProjects (const juce::StringArray& paths)
+    {
+        recentPaths = paths;
+        const auto count = juce::jmin (static_cast<int> (recentButtons.size()), recentPaths.size());
+        for (int i = 0; i < static_cast<int> (recentButtons.size()); ++i)
+        {
+            auto& button = recentButtons[static_cast<size_t> (i)];
+            button.setVisible (i < count);
+            if (i < count)
+                button.setButtonText (juce::File (recentPaths[i]).getFileName());
+        }
+
+        recentTitle.setVisible (count > 0);
+        resized();
+    }
+
+    juce::String recentProjectPath (int index) const
+    {
+        return juce::isPositiveAndBelow (index, recentPaths.size()) ? recentPaths[index] : juce::String();
     }
 
     void paint (juce::Graphics& g) override
     {
-        juce::ColourGradient bg (juce::Colour (0xff0a0d12), 0.0f, 0.0f,
-                                 juce::Colour (0xff161b21), 0.0f, static_cast<float> (getHeight()), false);
+        g.fillAll (juce::Colours::black.withAlpha (0.50f));
+
+        auto panel = panelBounds().toFloat();
+        juce::ColourGradient bg (panelFill().brighter (0.04f), panel.getTopLeft(),
+                                 backgroundBottom().brighter (0.05f), panel.getBottomRight(), false);
         g.setGradientFill (bg);
-        g.fillAll();
+        g.fillRoundedRectangle (panel, 8.0f);
 
-        auto bounds = getLocalBounds().toFloat();
-        drawSpectralField (g, bounds.reduced (28.0f, 30.0f));
+        g.setColour (hairline().withAlpha (0.42f));
+        g.drawRoundedRectangle (panel, 8.0f, 1.0f);
 
-        auto text = getTextBounds();
-        g.setColour (accentB().brighter (0.16f));
-        g.setFont (juce::FontOptions (42.0f, juce::Font::bold));
-        g.drawFittedText ("ff::", text.removeFromTop (58.0f).toNearestInt(), juce::Justification::centredLeft, 1);
-
-        g.setColour (ink());
-        g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
-        g.drawFittedText ("filter frame", text.removeFromTop (26.0f).toNearestInt(), juce::Justification::centredLeft, 1);
-
-        text.removeFromTop (12.0f);
-        g.setColour (mutedInk().withAlpha (0.86f));
-        g.setFont (juce::FontOptions (13.0f));
-        g.drawFittedText ("frequency-band FSMs, nested machines, live SuperCollider lanes, and spectral automation",
-                          text.removeFromTop (46.0f).toNearestInt(), juce::Justification::centredLeft, 2);
-
-        text.removeFromTop (18.0f);
-        drawStat (g, text.removeFromTop (24.0f), "bands", "20 Hz - 20 kHz");
-        drawStat (g, text.removeFromTop (24.0f), "states", "up to 12 per band");
-        drawStat (g, text.removeFromTop (24.0f), "lanes", "SC code + automation");
+        auto strip = panel.removeFromTop (3.0f).reduced (1.0f, 0.0f);
+        juce::ColourGradient rainbow (graphColour (0).withAlpha (0.85f), strip.getTopLeft(),
+                                      graphColour (5).withAlpha (0.85f), strip.getTopRight(), false);
+        rainbow.addColour (0.25, graphColour (2).withAlpha (0.85f));
+        rainbow.addColour (0.50, graphColour (4).withAlpha (0.85f));
+        rainbow.addColour (0.75, graphColour (7).withAlpha (0.85f));
+        g.setGradientFill (rainbow);
+        g.fillRect (strip);
     }
 
     void resized() override
     {
-        auto actions = getTextBounds().withY (static_cast<float> (getHeight() - juce::jmax (116, getHeight() / 5))).withHeight (90).toNearestInt();
-        auto top = actions.removeFromTop (42);
-        complexButton.setBounds (top.removeFromLeft (juce::jmin (160, top.getWidth() / 2)).reduced (0, 3));
-        simpleButton.setBounds (top.removeFromLeft (juce::jmin (138, top.getWidth())).reduced (8, 3));
+        auto panel = panelBounds().reduced (26, 24);
+        auto heading = panel.removeFromTop (64);
+        titleLabel.setBounds (heading.removeFromTop (34));
+        subtitleLabel.setBounds (heading.removeFromTop (24));
 
-        auto lower = actions.removeFromTop (38);
-        continueButton.setBounds (lower.removeFromLeft (120).reduced (0, 4));
-        loadButton.setBounds (lower.removeFromLeft (104).reduced (8, 4));
+        panel.removeFromTop (10);
+        auto actions = panel.removeFromTop (84);
+        auto topActions = actions.removeFromTop (40);
+        complexButton.setBounds (topActions.removeFromLeft (150).reduced (0, 2));
+        topActions.removeFromLeft (8);
+        simpleButton.setBounds (topActions.removeFromLeft (150).reduced (0, 2));
+
+        auto secondActions = actions.removeFromTop (40);
+        continueButton.setBounds (secondActions.removeFromLeft (150).reduced (0, 2));
+        secondActions.removeFromLeft (8);
+        loadButton.setBounds (secondActions.removeFromLeft (150).reduced (0, 2));
+
+        panel.removeFromTop (12);
+        recentTitle.setBounds (panel.removeFromTop (24));
+        for (auto& button : recentButtons)
+            button.setBounds (panel.removeFromTop (34).reduced (0, 3));
     }
 
 private:
-    static void styleButton (juce::TextButton& button, juce::Colour colour)
+    juce::Rectangle<int> panelBounds() const
     {
-        button.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff131820));
-        button.setColour (juce::TextButton::buttonOnColourId, rowFill().interpolatedWith (colour, 0.20f));
-        button.setColour (juce::TextButton::textColourOffId, colour.brighter (0.08f));
+        auto bounds = getLocalBounds();
+        const auto width = juce::jmin (560, bounds.getWidth() - 48);
+        const auto height = juce::jmin (370, bounds.getHeight() - 48);
+        return juce::Rectangle<int> (width, height).withCentre (bounds.getCentre());
     }
 
-    static void stylePrimaryButton (juce::TextButton& button, juce::Colour colour)
-    {
-        button.setColour (juce::TextButton::buttonColourId, rowFill().interpolatedWith (colour, 0.30f));
-        button.setColour (juce::TextButton::buttonOnColourId, rowFill().interpolatedWith (colour, 0.42f));
-        button.setColour (juce::TextButton::textColourOffId, ink());
-    }
-
-    juce::Rectangle<float> getTextBounds() const
-    {
-        auto bounds = getLocalBounds().toFloat();
-        return bounds.removeFromLeft (juce::jmin (460.0f, bounds.getWidth() * 0.46f))
-                     .reduced (44.0f, 46.0f);
-    }
-
-    void drawSpectralField (juce::Graphics& g, juce::Rectangle<float> area)
-    {
-        auto map = area.withTrimmedLeft (juce::jmin (420.0f, area.getWidth() * 0.40f)).reduced (4.0f, 10.0f);
-        g.setColour (juce::Colour (0xff090c11).withAlpha (0.68f));
-        g.fillRoundedRectangle (map, 8.0f);
-        g.setColour (hairline().withAlpha (0.30f));
-        g.drawRoundedRectangle (map.reduced (0.5f), 8.0f, 1.0f);
-
-        const double ticks[] = { 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0 };
-        for (auto hz : ticks)
-        {
-            const auto x = welcomeLogX (hz, map.reduced (28.0f, 0.0f));
-            g.setColour (hairline().withAlpha (hz == 1000.0 ? 0.30f : 0.14f));
-            g.drawVerticalLine (juce::roundToInt (x), map.getY() + 18.0f, map.getBottom() - 28.0f);
-        }
-
-        for (int i = 0; i < 6; ++i)
-        {
-            const auto hz = std::pow (10.0, std::log10 (30.0) + (std::log10 (14000.0) - std::log10 (30.0)) * (static_cast<double> (i) / 5.0));
-            auto centre = juce::Point<float> (welcomeLogX (hz, map.reduced (28.0f, 0.0f)),
-                                              map.getY() + 60.0f + std::fmod (static_cast<float> (i * 71), juce::jmax (80.0f, map.getHeight() - 130.0f)));
-            drawIsland (g, centre, 40.0f + static_cast<float> ((i % 3) * 10), graphColour (i + 2), i);
-        }
-
-        g.setColour (mutedInk().withAlpha (0.42f));
-        g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
-        g.drawFittedText ("spectral topology", map.reduced (18.0f).removeFromTop (24.0f).toNearestInt(), juce::Justification::centredLeft, 1);
-    }
-
-    static float welcomeLogX (double hz, juce::Rectangle<float> area)
-    {
-        const auto minLog = std::log10 (20.0);
-        const auto maxLog = std::log10 (20000.0);
-        const auto norm = (std::log10 (juce::jlimit (20.0, 20000.0, hz)) - minLog) / (maxLog - minLog);
-        return area.getX() + static_cast<float> (norm) * area.getWidth();
-    }
-
-    void drawIsland (juce::Graphics& g, juce::Point<float> centre, float radius, juce::Colour colour, int seed)
-    {
-        g.setColour (colour.withAlpha (0.10f));
-        g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
-        g.setColour (colour.withAlpha (0.48f));
-        g.drawEllipse (centre.x - radius * 0.64f, centre.y - radius * 0.64f, radius * 1.28f, radius * 1.28f, 1.0f);
-
-        juce::Point<float> previous;
-        for (int i = 0; i < 7; ++i)
-        {
-            const auto angle = -juce::MathConstants<float>::halfPi + static_cast<float> (i) * juce::MathConstants<float>::twoPi / 7.0f;
-            const auto p = centre + juce::Point<float> (std::cos (angle), std::sin (angle)) * (radius * 0.50f);
-            if (i > 0)
-            {
-                g.setColour (colour.withAlpha (0.20f));
-                g.drawLine ({ previous, p }, 1.0f);
-            }
-
-            g.setColour (graphColour (seed + i).withAlpha (0.76f));
-            g.fillEllipse (p.x - 7.0f, p.y - 7.0f, 14.0f, 14.0f);
-            g.setColour (ink().withAlpha (0.72f));
-            g.setFont (juce::FontOptions (7.5f, juce::Font::bold));
-            g.drawFittedText (juce::String (i + 1), juce::Rectangle<float> (p.x - 7.0f, p.y - 6.0f, 14.0f, 12.0f).toNearestInt(), juce::Justification::centred, 1);
-            previous = p;
-        }
-
-        g.setColour (juce::Colour (0xff080b0f).withAlpha (0.92f));
-        g.fillEllipse (centre.x - 17.0f, centre.y - 17.0f, 34.0f, 34.0f);
-        g.setColour (colour.withAlpha (0.70f));
-        g.drawEllipse (centre.x - 17.0f, centre.y - 17.0f, 34.0f, 34.0f, 1.2f);
-    }
-
-    void drawStat (juce::Graphics& g, juce::Rectangle<float> row, const juce::String& label, const juce::String& value)
-    {
-        g.setColour (accentA().withAlpha (0.72f));
-        g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
-        g.drawFittedText (label, row.removeFromLeft (72.0f).toNearestInt(), juce::Justification::centredLeft, 1);
-        g.setColour (mutedInk().withAlpha (0.78f));
-        g.drawFittedText (value, row.toNearestInt(), juce::Justification::centredLeft, 1);
-    }
-
+    juce::Label titleLabel;
+    juce::Label subtitleLabel;
+    juce::Label recentTitle;
     juce::TextButton simpleButton;
     juce::TextButton complexButton;
     juce::TextButton continueButton;
     juce::TextButton loadButton;
+    std::array<juce::TextButton, 4> recentButtons;
+    juce::StringArray recentPaths;
 };
 
 class MainComponent final : public juce::Component,
@@ -8109,6 +8071,15 @@ public:
             welcome.setVisible (false);
             loadProject();
         };
+        welcome.onRecentProject = [this] (int index)
+        {
+            const auto path = welcome.recentProjectPath (index);
+            if (path.isEmpty())
+                return;
+
+            if (loadProjectFromFile (juce::File (path)))
+                welcome.setVisible (false);
+        };
 
         graph.onStateChosen = [this] (int)
         {
@@ -8215,6 +8186,7 @@ public:
         refreshControls();
         restoreLastProject();
         resetUndoHistory();
+        welcome.setRecentProjects (recentProjects);
         welcome.toFront (false);
         setWantsKeyboardFocus (true);
         startTimerHz (30);
@@ -8770,6 +8742,7 @@ public:
 
         if (welcome.isVisible())
         {
+            welcome.setRecentProjects (recentProjects);
             welcome.setBounds (getLocalBounds());
             welcome.toFront (false);
         }
