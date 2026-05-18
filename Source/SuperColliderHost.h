@@ -130,7 +130,7 @@ private:
     std::atomic<bool> logReaderShouldRun { false };
     std::thread logReader;
     juce::String currentStatus { "Audio offline" };
-    float masterGain = 1.0f;
+    float masterGain = 0.7f;
     bool masterLimiterEnabled = true;
     juce::OwnedArray<juce::File> tempScriptStorage;
     juce::HashMap<juce::String, juce::File*> tempScripts;

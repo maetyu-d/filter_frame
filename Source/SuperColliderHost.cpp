@@ -823,7 +823,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "~wfNextMeterId = 1;\n"
                "~wfExportCancel = false;\n"
                "~wfExporting = false;\n"
-               "~wfMasterGain = 1.0;\n"
+               "~wfMasterGain = 0.7;\n"
                "~wfMasterLimiter = 1;\n"
                "~wfJuce = NetAddr(\"127.0.0.1\", 57142);\n"
                "~wfReportAudio = {\n"
@@ -886,8 +886,8 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "};\n"
                "SynthDef(\\wfLaneRouter, { |bus = 0, replyId = 0, wfMasterGain = 1, wfMasterLimiter = 1|\n"
                "    var sig = In.ar(bus, 2);\n"
-               "    var dry = sig * Lag.kr(wfMasterGain.clip(0, 5), 0.035);\n"
-               "    var limited = Limiter.ar(dry, 0.92, 0.018);\n"
+               "    var dry = LeakDC.ar(sig * Lag.kr(wfMasterGain.clip(0, 2), 0.035));\n"
+               "    var limited = Limiter.ar(dry.tanh * 0.82, 0.82, 0.030);\n"
                "    var out = (limited * Lag.kr(wfMasterLimiter.clip(0, 1), 0.02)) + (dry * (1 - Lag.kr(wfMasterLimiter.clip(0, 1), 0.02)));\n"
                "    var mono = Mix(out) * 0.5;\n"
                "    var meterTrig = Impulse.kr(30, 0) + Trig1.kr(1, ControlDur.ir);\n"
@@ -908,8 +908,8 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "        sig = BLowPass4.ar(sig, high, 0.56);\n"
                "    };\n"
                "    sig = LeakDC.ar(sig);\n"
-               "    controlled = Balance2.ar(sig[0], sig[1], Lag.kr(wfPan.clip(-1, 1), 0.02)) * env * Lag.kr(wfVol, 0.02) * Lag.kr(wfMasterGain.clip(0, 5), 0.035);\n"
-               "    controlled = (Limiter.ar(controlled, 0.92, 0.018) * Lag.kr(wfMasterLimiter.clip(0, 1), 0.02)) + (controlled * (1 - Lag.kr(wfMasterLimiter.clip(0, 1), 0.02)));\n"
+               "    controlled = LeakDC.ar(Balance2.ar(sig[0], sig[1], Lag.kr(wfPan.clip(-1, 1), 0.02)) * env * Lag.kr(wfVol, 0.02) * Lag.kr(wfMasterGain.clip(0, 2), 0.035));\n"
+               "    controlled = (Limiter.ar(controlled.tanh * 0.82, 0.82, 0.030) * Lag.kr(wfMasterLimiter.clip(0, 1), 0.02)) + (controlled * (1 - Lag.kr(wfMasterLimiter.clip(0, 1), 0.02)));\n"
                "    mono = Mix(controlled) * 0.5;\n"
                "    meterTrig = Impulse.kr(30, 0) + Trig1.kr(1, ControlDur.ir);\n"
                "    rms = Amplitude.kr(mono, 0.004, 0.055).clip(0, 1);\n"
@@ -987,7 +987,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "    }.play(s, addAction: \\addToTail, args: [\\wfMasterGain, ~wfMasterGain]);\n"
                "};\n"
                "~wfSetMasterGain = { |gain|\n"
-               "    ~wfMasterGain = gain.clip(0, 5);\n"
+               "    ~wfMasterGain = gain.clip(0, 2);\n"
                "    if (~wfMaster.notNil) { ~wfMaster.set(\\wfMasterGain, ~wfMasterGain) };\n"
                "    ~wfLaneRouters.values.do { |router| if (router.notNil) { router.set(\\wfMasterGain, ~wfMasterGain) } };\n"
                "    ~wfObjects.keysValuesDo { |key, obj| if (~wfFrozenPaths[key].notNil and: { obj.notNil and: { obj.respondsTo(\\set) } }) { obj.set(\\wfMasterGain, ~wfMasterGain) } };\n"
@@ -1582,7 +1582,7 @@ void SuperColliderHost::sendBandCommand (const juce::String& laneId, double lowH
 void SuperColliderHost::setMasterGain (float gain)
     {
         const juce::ScopedLock lock (hostLock);
-        masterGain = juce::jlimit (0.0f, 5.0f, gain);
+        masterGain = juce::jlimit (0.0f, 2.0f, gain);
         sendMasterGainCommand (masterGain);
     }
 
@@ -1595,7 +1595,7 @@ void SuperColliderHost::setMasterLimiterEnabled (bool shouldUseLimiter)
 
 void SuperColliderHost::sendMasterGainCommand (float gain)
     {
-        const auto clippedGain = juce::jlimit (0.0f, 5.0f, gain);
+        const auto clippedGain = juce::jlimit (0.0f, 2.0f, gain);
 
         if (shouldUseCommandFallback())
             writeCommand ("~wfSetMasterGain.(" + juce::String (clippedGain, 3) + ");\n");
