@@ -1566,8 +1566,8 @@ public:
         drawModeButton (g, overviewButton, "Overview", model->viewMode == FilterbankViewMode::overview);
         drawModeButton (g, topologyPlusButton, "Topology+", model->viewMode == FilterbankViewMode::topologyPlus);
         drawModeButton (g, fsmButton, "FSM", model->viewMode == FilterbankViewMode::fsm);
-        drawModeButton (g, octaveButton, "Octave", model->viewMode == FilterbankViewMode::octave
-                                              || model->viewMode == FilterbankViewMode::thirdOctave);
+        drawModeButton (g, octaveButton, model->viewMode == FilterbankViewMode::thirdOctave ? "1/3-Oct" : "Octave",
+                        model->viewMode == FilterbankViewMode::octave || model->viewMode == FilterbankViewMode::thirdOctave);
 
         auto plot = bounds.reduced (18.0f, 56.0f).withTrimmedTop (12.0f);
         g.setColour (juce::Colour (0xff0b0e13).withAlpha (0.72f));
