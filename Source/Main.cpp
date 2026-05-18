@@ -7155,10 +7155,11 @@ public:
         };
 
         statusLabel.setText ("Audio offline", juce::dontSendNotification);
-        statusLabel.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+        statusLabel.setFont (juce::FontOptions (11.5f, juce::Font::bold));
         statusLabel.setColour (juce::Label::textColourId, mutedInk());
-        statusLabel.setJustificationType (juce::Justification::centredLeft);
+        statusLabel.setJustificationType (juce::Justification::centred);
         statusLabel.setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        statusLabel.setTooltip ("Click to prepare audio");
         statusLabel.onClick = [this]
         {
             startPrepareJob (false);
@@ -8466,9 +8467,10 @@ public:
         auto area = getLocalBounds().reduced (18);
         auto header = area.removeFromTop (46);
         auto headerInner = header.reduced (10, 7);
-        title.setBounds (headerInner.removeFromLeft (86));
-        projectFileLabel.setBounds (headerInner.removeFromLeft (116).reduced (2, 2));
-        statusLabel.setBounds (headerInner.removeFromLeft (86).reduced (4, 2));
+        title.setBounds (headerInner.removeFromLeft (74));
+        projectFileLabel.setBounds (headerInner.removeFromLeft (150).reduced (2, 2));
+        statusLabel.setBounds (headerInner.removeFromLeft (128).reduced (5, 2));
+        headerInner.removeFromLeft (6);
 
         auto topCountArea = headerInner.removeFromRight (148);
         topStateCountLabel.setBounds (topCountArea.removeFromLeft (48).reduced (2, 2));
@@ -8502,7 +8504,7 @@ public:
         auto addGap = [&buttonRow] (int width) { buttonRow.removeFromLeft (width); };
 
         masterGainLabel.setBounds (buttonRow.removeFromLeft (28).reduced (3, 2));
-        masterGainSlider.setBounds (buttonRow.removeFromLeft (compact ? 76 : 96).reduced (3, 0));
+        masterGainSlider.setBounds (buttonRow.removeFromLeft (compact ? 82 : 100).reduced (3, 0));
         addGap (5);
         addButton (runButton, compact ? 64 : 72);
         addButton (stepButton, compact ? 52 : 62);
@@ -9222,6 +9224,47 @@ private:
         return text;
     }
 
+    static juce::String formatCompactScAudioStatus (float rate, int buffer, int outs)
+    {
+        juce::String rateText;
+        if (rate >= 1000.0f)
+            rateText = juce::String (rate / 1000.0f, std::abs (std::round (rate / 1000.0f) * 1000.0f - rate) < 0.5f ? 0 : 1) + "k";
+        else
+            rateText = juce::String (rate, 0) + "Hz";
+
+        return "Audio " + rateText + " / " + juce::String (buffer) + " / " + juce::String (outs) + "ch";
+    }
+
+    static bool parseScAudioDiagnostics (const juce::String& diagnostics, float& rate, int& buffer, int& outs)
+    {
+        if (diagnostics.contains ("rate="))
+        {
+            auto tokens = juce::StringArray::fromTokens (diagnostics, " ", "");
+            for (auto token : tokens)
+            {
+                token = token.trim();
+                if (token.startsWith ("rate="))
+                    rate = token.fromFirstOccurrenceOf ("=", false, false).getFloatValue();
+                else if (token.startsWith ("buffer="))
+                    buffer = token.fromFirstOccurrenceOf ("=", false, false).getIntValue();
+                else if (token.startsWith ("outs="))
+                    outs = token.fromFirstOccurrenceOf ("=", false, false).getIntValue();
+            }
+
+            return rate > 0.0f && buffer > 0 && outs > 0;
+        }
+
+        if (auto parts = juce::StringArray::fromTokens (diagnostics, "/", ""); parts.size() >= 3)
+        {
+            rate = parts[0].trim().upToFirstOccurrenceOf (" ", false, false).getFloatValue();
+            buffer = parts[1].trim().upToFirstOccurrenceOf (" ", false, false).getIntValue();
+            outs = parts[2].trim().upToFirstOccurrenceOf (" ", false, false).getIntValue();
+            return rate > 0.0f && buffer > 0 && outs > 0;
+        }
+
+        return false;
+    }
+
     void updateScAudioDiagnostics (juce::String diagnostics)
     {
         diagnostics = diagnostics.trim();
@@ -9230,7 +9273,14 @@ private:
 
         scAudioDiagnostics = diagnostics;
         appendLog ("SC actual audio: " + scAudioDiagnostics);
-        statusLabel.setText ("Audio " + scAudioDiagnostics, juce::dontSendNotification);
+        statusLabel.setTooltip ("Audio " + scAudioDiagnostics);
+        juce::String compactStatus = "Audio ready";
+        float rate = 0.0f;
+        int buffer = 0;
+        int outs = 0;
+        if (parseScAudioDiagnostics (scAudioDiagnostics, rate, buffer, outs))
+            compactStatus = formatCompactScAudioStatus (rate, buffer, outs);
+        statusLabel.setText (compactStatus, juce::dontSendNotification);
         if (settingsWindow != nullptr)
             settingsWindow->setScDiagnostics (scAudioDiagnostics);
     }
