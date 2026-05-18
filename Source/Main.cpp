@@ -1546,6 +1546,8 @@ public:
 
         topologyPlusFullButton = {};
         topologyPlusAllButton = {};
+        fsmStateHits.clear();
+        fsmLaneHits.clear();
 
         auto header = bounds.reduced (16.0f, 12.0f).removeFromTop (32.0f);
         g.setFont (juce::FontOptions (17.0f, juce::Font::bold));
@@ -1560,11 +1562,13 @@ public:
         overviewButton = header.removeFromRight (118.0f).reduced (4.0f, 2.0f);
         topologyPlusButton = header.removeFromRight (118.0f).reduced (4.0f, 2.0f);
         topologyButton = header.removeFromRight (112.0f).reduced (4.0f, 2.0f);
+        fsmButton = header.removeFromRight (72.0f).reduced (4.0f, 2.0f);
         octaveButton = header.removeFromRight (110.0f).reduced (4.0f, 2.0f);
         thirdButton = header.removeFromRight (128.0f).reduced (4.0f, 2.0f);
         drawModeButton (g, overviewButton, "Overview", model->viewMode == FilterbankViewMode::overview);
         drawModeButton (g, topologyButton, "Topology", model->viewMode == FilterbankViewMode::topology);
         drawModeButton (g, topologyPlusButton, "Topology+", model->viewMode == FilterbankViewMode::topologyPlus);
+        drawModeButton (g, fsmButton, "FSM", model->viewMode == FilterbankViewMode::fsm);
         drawModeButton (g, thirdButton, "1/3 octave", model->viewMode == FilterbankViewMode::thirdOctave);
         drawModeButton (g, octaveButton, "Octave", model->viewMode == FilterbankViewMode::octave);
 
@@ -1574,6 +1578,8 @@ public:
 
         if (model->viewMode == FilterbankViewMode::overview)
             drawOverview (g, plot.reduced (12.0f, 12.0f));
+        else if (model->viewMode == FilterbankViewMode::fsm)
+            drawFsmView (g, plot.reduced (14.0f, 14.0f));
         else if (model->viewMode == FilterbankViewMode::topology)
             drawTopology (g, plot.reduced (14.0f, 14.0f));
         else if (model->viewMode == FilterbankViewMode::topologyPlus)
@@ -1629,6 +1635,13 @@ public:
             return;
         }
 
+        if (fsmButton.contains (event.position))
+        {
+            if (onViewModeChanged)
+                onViewModeChanged (FilterbankViewMode::fsm);
+            return;
+        }
+
         if (topologyButton.contains (event.position))
         {
             if (onViewModeChanged)
@@ -1655,6 +1668,29 @@ public:
             topologyPlusFocusedBand = -1;
             repaint();
             return;
+        }
+
+        if (model->viewMode == FilterbankViewMode::fsm)
+        {
+            for (const auto& hit : fsmLaneHits)
+            {
+                if (hit.bounds.contains (event.position))
+                {
+                    if (onTopologyPlusStateLaneSelected)
+                        onTopologyPlusStateLaneSelected (hit.bandIndex, hit.stateIndex, hit.laneIndex);
+                    return;
+                }
+            }
+
+            for (const auto& hit : fsmStateHits)
+            {
+                if (hit.bounds.contains (event.position))
+                {
+                    if (onTopologyPlusStateSelected)
+                        onTopologyPlusStateSelected (hit.bandIndex, hit.stateIndex);
+                    return;
+                }
+            }
         }
 
         if (model->viewMode == FilterbankViewMode::topologyPlus)
@@ -1957,6 +1993,21 @@ private:
         int bandIndex = 0;
     };
 
+    struct FsmStateHit
+    {
+        juce::Rectangle<float> bounds;
+        int bandIndex = -1;
+        int stateIndex = -1;
+    };
+
+    struct FsmLaneHit
+    {
+        juce::Rectangle<float> bounds;
+        int bandIndex = -1;
+        int stateIndex = -1;
+        int laneIndex = -1;
+    };
+
     enum class TopologyPlusHitKind
     {
         state,
@@ -2019,6 +2070,243 @@ private:
     static juce::String formatOverviewRange (double lowHz, double highHz)
     {
         return formatOverviewHz (lowHz) + "-" + formatOverviewHz (highHz);
+    }
+
+    void drawFsmView (juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        if (model == nullptr || model->bands.empty())
+            return;
+
+        fsmStateHits.clear();
+        fsmLaneHits.clear();
+
+        const auto bandIndex = juce::jlimit (0, model->getBandCount() - 1, model->selectedBand);
+        const auto& band = model->bands[static_cast<size_t> (bandIndex)];
+        const auto& machine = band.machine;
+        const auto stateCount = machine.getStateCount();
+        const auto selectedState = juce::jlimit (0, stateCount - 1, machine.selectedState);
+        const auto& state = machine.state (selectedState);
+        const auto colour = graphColour (band.index);
+
+        auto header = area.removeFromTop (34.0f);
+        g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+        g.setColour (mutedInk().withAlpha (0.76f));
+        g.drawFittedText ("Selected band FSM", header.removeFromLeft (118.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+
+        g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
+        g.setColour (colour.brighter (0.12f));
+        g.drawFittedText (band.name + " band", header.removeFromLeft (150.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+
+        g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
+        g.setColour (mutedInk().withAlpha (0.82f));
+        g.drawFittedText (formatOverviewRange (band.lowHz, model->highHzForBandSpan (band))
+                          + " | S" + juce::String (selectedState + 1)
+                          + " " + state.name
+                          + " | " + juce::String (state.lanes.size()) + " lane" + (state.lanes.size() == 1 ? "" : "s")
+                          + " | " + (band.syncToFilterbankClock ? "Sync" : "Free"),
+                          header.toNearestInt(), juce::Justification::centredLeft, 1);
+
+        area.removeFromTop (6.0f);
+        auto inspector = area.removeFromRight (juce::jlimit (270.0f, 390.0f, area.getWidth() * 0.34f)).reduced (10.0f, 0.0f);
+        auto graphArea = area.reduced (8.0f, 4.0f);
+
+        drawFsmGraph (g, graphArea, band, machine, selectedState, colour);
+        drawFsmInspector (g, inspector, band, machine, selectedState, colour);
+    }
+
+    void drawFsmGraph (juce::Graphics& g,
+                       juce::Rectangle<float> area,
+                       const FilterBand& band,
+                       const MachineModel& machine,
+                       int selectedState,
+                       juce::Colour colour)
+    {
+        const auto stateCount = machine.getStateCount();
+        if (stateCount <= 0)
+            return;
+
+        g.setColour (juce::Colour (0xff07090d).withAlpha (0.56f));
+        g.fillRoundedRectangle (area, 8.0f);
+        g.setColour (hairline().withAlpha (0.18f));
+        g.drawRoundedRectangle (area, 8.0f, 1.0f);
+
+        auto centre = area.getCentre();
+        const auto radius = juce::jmax (82.0f, juce::jmin (area.getWidth(), area.getHeight()) * 0.34f);
+        const auto nodeRadius = juce::jlimit (22.0f, 34.0f, radius * 0.18f);
+        std::vector<juce::Point<float>> points;
+        points.reserve (static_cast<size_t> (stateCount));
+
+        for (int i = 0; i < stateCount; ++i)
+        {
+            const auto angle = -juce::MathConstants<float>::halfPi
+                             + juce::MathConstants<float>::twoPi * static_cast<float> (i) / static_cast<float> (stateCount);
+            points.push_back ({ centre.x + std::cos (angle) * radius,
+                                centre.y + std::sin (angle) * radius });
+        }
+
+        for (int i = 0; i < stateCount; ++i)
+        {
+            g.setColour (hairline().withAlpha (0.16f));
+            g.drawLine ({ centre, points[static_cast<size_t> (i)] }, 1.0f);
+        }
+
+        for (const auto& rule : machine.rules)
+        {
+            if (! juce::isPositiveAndBelow (rule.from, stateCount) || ! juce::isPositiveAndBelow (rule.to, stateCount))
+                continue;
+
+            auto from = points[static_cast<size_t> (rule.from)];
+            auto to = points[static_cast<size_t> (rule.to)];
+            const auto active = rule.from == selectedState || rule.to == selectedState;
+            g.setColour ((active ? colour : transitionColourFor (rule.from)).withAlpha (active ? 0.58f : 0.22f));
+            if (rule.from == rule.to)
+            {
+                g.drawEllipse ({ from.x - nodeRadius * 1.25f, from.y - nodeRadius * 1.25f,
+                                 nodeRadius * 2.5f, nodeRadius * 2.5f }, active ? 1.4f : 0.8f);
+            }
+            else
+            {
+                juce::Path path;
+                path.startNewSubPath (from);
+                path.quadraticTo (centre + (from + to - centre * 2.0f) * 0.10f, to);
+                g.strokePath (path, juce::PathStrokeType (active ? 1.8f : 1.0f));
+            }
+        }
+
+        g.setColour (colour.withAlpha (0.08f));
+        g.fillEllipse ({ centre.x - radius * 0.74f, centre.y - radius * 0.74f, radius * 1.48f, radius * 1.48f });
+
+        for (int i = 0; i < stateCount; ++i)
+        {
+            auto point = points[static_cast<size_t> (i)];
+            const auto selected = i == selectedState;
+            auto node = juce::Rectangle<float> (point.x - nodeRadius, point.y - nodeRadius, nodeRadius * 2.0f, nodeRadius * 2.0f);
+            const auto stateColour = graphColour (i);
+            g.setColour ((selected ? stateColour : rowFill()).withAlpha (selected ? 0.34f : 0.82f));
+            g.fillEllipse (node);
+            g.setColour ((selected ? stateColour.brighter (0.25f) : hairline()).withAlpha (selected ? 0.96f : 0.72f));
+            g.drawEllipse (node, selected ? 2.0f : 1.1f);
+
+            g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+            g.setColour (ink());
+            g.drawFittedText (juce::String (i + 1), node.toNearestInt(), juce::Justification::centred, 1);
+
+            if (machine.hasChildMachine (i))
+            {
+                auto badge = node.withSizeKeepingCentre (nodeRadius * 1.75f, 14.0f).withY (node.getBottom() - 3.0f);
+                g.setColour (accentB().withAlpha (selected ? 0.28f : 0.18f));
+                g.fillRoundedRectangle (badge, 4.0f);
+                g.setColour (accentB().withAlpha (0.78f));
+                g.drawRoundedRectangle (badge, 4.0f, 1.0f);
+                g.setFont (juce::FontOptions (8.5f, juce::Font::bold));
+                g.drawFittedText ("nested", badge.toNearestInt(), juce::Justification::centred, 1);
+            }
+
+            fsmStateHits.push_back ({ node.expanded (6.0f), band.index, i });
+        }
+
+        auto centreBadge = juce::Rectangle<float> (centre.x - 70.0f, centre.y - 23.0f, 140.0f, 46.0f);
+        g.setColour (juce::Colour (0xff0d1117).withAlpha (0.96f));
+        g.fillRoundedRectangle (centreBadge, 9.0f);
+        g.setColour (colour.withAlpha (0.78f));
+        g.drawRoundedRectangle (centreBadge, 9.0f, 1.2f);
+        g.setFont (juce::FontOptions (15.0f, juce::Font::bold));
+        g.setColour (ink());
+        g.drawFittedText (band.name, centreBadge.reduced (8.0f, 4.0f).toNearestInt(), juce::Justification::centred, 1);
+    }
+
+    void drawFsmInspector (juce::Graphics& g,
+                           juce::Rectangle<float> area,
+                           const FilterBand& band,
+                           const MachineModel& machine,
+                           int selectedState,
+                           juce::Colour colour)
+    {
+        g.setColour (juce::Colour (0xff090d12).withAlpha (0.72f));
+        g.fillRoundedRectangle (area, 8.0f);
+        g.setColour (colour.withAlpha (0.35f));
+        g.drawRoundedRectangle (area, 8.0f, 1.0f);
+
+        auto inner = area.reduced (16.0f, 14.0f);
+        const auto& state = machine.state (selectedState);
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+        g.setColour (mutedInk().withAlpha (0.78f));
+        g.drawFittedText ("State", inner.removeFromTop (16.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+
+        g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
+        g.setColour (ink());
+        g.drawFittedText ("S" + juce::String (selectedState + 1) + " " + state.name,
+                          inner.removeFromTop (28.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+
+        g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
+        g.setColour (mutedInk().withAlpha (0.78f));
+        g.drawFittedText (juce::String (state.tempoBpm, 1) + " BPM | "
+                          + juce::String (state.beatsPerBar) + "/" + juce::String (state.beatUnit)
+                          + " | " + juce::String (state.arrangementBars) + " bar" + (state.arrangementBars == 1 ? "" : "s"),
+                          inner.removeFromTop (22.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+
+        if (auto* child = machine.childMachine (selectedState))
+        {
+            auto badge = inner.removeFromTop (24.0f).reduced (0.0f, 3.0f);
+            g.setColour (accentB().withAlpha (0.12f));
+            g.fillRoundedRectangle (badge, 5.0f);
+            g.setColour (accentB().withAlpha (0.54f));
+            g.drawRoundedRectangle (badge, 5.0f, 1.0f);
+            g.setColour (accentB().brighter (0.08f));
+            g.drawFittedText ("Nested FSM: " + nestedTimingModeName (child->timingMode)
+                              + " | " + juce::String (child->getStateCount()) + " states",
+                              badge.reduced (8.0f, 0.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+        }
+        else
+        {
+            inner.removeFromTop (8.0f);
+        }
+
+        inner.removeFromTop (8.0f);
+        g.setColour (mutedInk().withAlpha (0.76f));
+        g.drawFittedText ("Lanes", inner.removeFromTop (18.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+
+        const auto laneCount = static_cast<int> (state.lanes.size());
+        for (int i = 0; i < laneCount && inner.getHeight() > 120.0f; ++i)
+        {
+            const auto& lane = state.lanes[static_cast<size_t> (i)];
+            auto row = inner.removeFromTop (26.0f).reduced (0.0f, 3.0f);
+            const auto selectedLane = i == machine.selectedLane;
+            const auto laneColour = graphColour (i);
+            g.setColour ((selectedLane ? laneColour : rowFill()).withAlpha (selectedLane ? 0.24f : 0.62f));
+            g.fillRoundedRectangle (row, 4.0f);
+            g.setColour ((selectedLane ? laneColour.brighter (0.16f) : hairline()).withAlpha (0.82f));
+            g.drawRoundedRectangle (row, 4.0f, selectedLane ? 1.4f : 0.8f);
+            g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+            g.setColour (selectedLane ? ink() : mutedInk());
+            g.drawFittedText (lane.name, row.reduced (8.0f, 0.0f).withTrimmedRight (48.0f).toNearestInt(),
+                              juce::Justification::centredLeft, 1);
+            g.setColour (laneColour.brighter (0.10f));
+            g.drawFittedText (juce::String (lane.volume * lane.gain, 2),
+                              row.removeFromRight (44.0f).toNearestInt(), juce::Justification::centredRight, 1);
+            fsmLaneHits.push_back ({ row, band.index, selectedState, i });
+        }
+
+        inner.removeFromTop (8.0f);
+        g.setColour (mutedInk().withAlpha (0.76f));
+        g.drawFittedText ("SC Code", inner.removeFromTop (18.0f).toNearestInt(), juce::Justification::centredLeft, 1);
+
+        auto codeBox = inner.reduced (0.0f, 4.0f);
+        g.setColour (juce::Colour (0xff05070a).withAlpha (0.82f));
+        g.fillRoundedRectangle (codeBox, 5.0f);
+        g.setColour (hairline().withAlpha (0.38f));
+        g.drawRoundedRectangle (codeBox, 5.0f, 1.0f);
+
+        const auto laneIndex = juce::jlimit (0, juce::jmax (0, laneCount - 1), machine.selectedLane);
+        const auto code = laneCount > 0 ? state.lanes[static_cast<size_t> (laneIndex)].script : juce::String();
+        juce::StringArray lines;
+        lines.addLines (code);
+        auto lineArea = codeBox.reduced (10.0f, 8.0f);
+        g.setFont (juce::FontOptions (10.0f, juce::Font::plain));
+        g.setColour (ink().withAlpha (0.78f));
+        for (int i = 0; i < lines.size() && i < 12 && lineArea.getHeight() > 12.0f; ++i)
+            g.drawFittedText (juce::String (i + 1).paddedLeft (' ', 2) + "  " + lines[i],
+                              lineArea.removeFromTop (13.0f).toNearestInt(), juce::Justification::centredLeft, 1);
     }
 
     void drawModeButton (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& text, bool selected)
@@ -3470,6 +3758,7 @@ private:
     std::vector<TopologyPlusHit> topologyPlusHits;
     juce::Rectangle<float> octaveButton;
     juce::Rectangle<float> thirdButton;
+    juce::Rectangle<float> fsmButton;
     juce::Rectangle<float> topologyButton;
     juce::Rectangle<float> topologyPlusButton;
     juce::Rectangle<float> topologyPlusFullButton;
@@ -3477,6 +3766,8 @@ private:
     juce::Rectangle<float> topologyPlusAddLinkButton;
     juce::Rectangle<float> topologyPlusMapArea;
     juce::Rectangle<float> overviewButton;
+    std::vector<FsmStateHit> fsmStateHits;
+    std::vector<FsmLaneHit> fsmLaneHits;
     std::vector<TopologyPlusInteractionHit> topologyPlusInteractionHits;
     std::vector<TopologyPlusInteractionControlHit> topologyPlusInteractionControls;
     int overviewScroll = 0;
@@ -9356,6 +9647,7 @@ private:
         {
             case FilterbankViewMode::octave: return "octave";
             case FilterbankViewMode::thirdOctave: return "thirdOctave";
+            case FilterbankViewMode::fsm: return "fsm";
             case FilterbankViewMode::overview: return "overview";
             case FilterbankViewMode::topology: return "topology";
             case FilterbankViewMode::topologyPlus: return "topologyPlus";
@@ -9367,6 +9659,7 @@ private:
     static FilterbankViewMode filterbankViewModeFromProjectString (const juce::String& text)
     {
         if (text == "thirdOctave") return FilterbankViewMode::thirdOctave;
+        if (text == "fsm") return FilterbankViewMode::fsm;
         if (text == "overview") return FilterbankViewMode::overview;
         if (text == "topology") return FilterbankViewMode::topology;
         if (text == "topologyPlus") return FilterbankViewMode::topologyPlus;
@@ -9379,6 +9672,7 @@ private:
         {
             case FilterbankViewMode::octave: return "Octave";
             case FilterbankViewMode::thirdOctave: return "1/3 octave";
+            case FilterbankViewMode::fsm: return "FSM";
             case FilterbankViewMode::overview: return "Overview";
             case FilterbankViewMode::topology: return "Topology";
             case FilterbankViewMode::topologyPlus: return "Topology+";

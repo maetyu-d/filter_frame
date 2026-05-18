@@ -125,6 +125,7 @@ enum class FilterbankViewMode
 {
     octave,
     thirdOctave,
+    fsm,
     overview,
     topology,
     topologyPlus
