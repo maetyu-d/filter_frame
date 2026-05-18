@@ -1559,18 +1559,15 @@ public:
         g.drawFittedText ("20 Hz - 20 kHz | steep crossover bands | per-band SC code",
                           header.removeFromLeft (420.0f).toNearestInt(), juce::Justification::centredLeft, 1);
 
-        overviewButton = header.removeFromRight (118.0f).reduced (4.0f, 2.0f);
         topologyPlusButton = header.removeFromRight (118.0f).reduced (4.0f, 2.0f);
-        topologyButton = header.removeFromRight (112.0f).reduced (4.0f, 2.0f);
         fsmButton = header.removeFromRight (72.0f).reduced (4.0f, 2.0f);
+        overviewButton = header.removeFromRight (118.0f).reduced (4.0f, 2.0f);
         octaveButton = header.removeFromRight (110.0f).reduced (4.0f, 2.0f);
-        thirdButton = header.removeFromRight (128.0f).reduced (4.0f, 2.0f);
         drawModeButton (g, overviewButton, "Overview", model->viewMode == FilterbankViewMode::overview);
-        drawModeButton (g, topologyButton, "Topology", model->viewMode == FilterbankViewMode::topology);
         drawModeButton (g, topologyPlusButton, "Topology+", model->viewMode == FilterbankViewMode::topologyPlus);
         drawModeButton (g, fsmButton, "FSM", model->viewMode == FilterbankViewMode::fsm);
-        drawModeButton (g, thirdButton, "1/3 octave", model->viewMode == FilterbankViewMode::thirdOctave);
-        drawModeButton (g, octaveButton, "Octave", model->viewMode == FilterbankViewMode::octave);
+        drawModeButton (g, octaveButton, "Octave", model->viewMode == FilterbankViewMode::octave
+                                              || model->viewMode == FilterbankViewMode::thirdOctave);
 
         auto plot = bounds.reduced (18.0f, 56.0f).withTrimmedTop (12.0f);
         g.setColour (juce::Colour (0xff0b0e13).withAlpha (0.72f));
@@ -1580,9 +1577,7 @@ public:
             drawOverview (g, plot.reduced (12.0f, 12.0f));
         else if (model->viewMode == FilterbankViewMode::fsm)
             drawFsmView (g, plot.reduced (14.0f, 14.0f));
-        else if (model->viewMode == FilterbankViewMode::topology)
-            drawTopology (g, plot.reduced (14.0f, 14.0f));
-        else if (model->viewMode == FilterbankViewMode::topologyPlus)
+        else if (model->viewMode == FilterbankViewMode::topologyPlus || model->viewMode == FilterbankViewMode::topology)
             drawTopologyPlus (g, plot.reduced (14.0f, 14.0f));
         else
         {
@@ -1621,13 +1616,6 @@ public:
             return;
         }
 
-        if (thirdButton.contains (event.position))
-        {
-            if (onViewModeChanged)
-                onViewModeChanged (FilterbankViewMode::thirdOctave);
-            return;
-        }
-
         if (overviewButton.contains (event.position))
         {
             if (onViewModeChanged)
@@ -1639,13 +1627,6 @@ public:
         {
             if (onViewModeChanged)
                 onViewModeChanged (FilterbankViewMode::fsm);
-            return;
-        }
-
-        if (topologyButton.contains (event.position))
-        {
-            if (onViewModeChanged)
-                onViewModeChanged (FilterbankViewMode::topology);
             return;
         }
 
@@ -1942,7 +1923,6 @@ public:
     void mouseWheelMove (const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
     {
         if (model == nullptr || (model->viewMode != FilterbankViewMode::overview
-                                 && model->viewMode != FilterbankViewMode::topology
                                  && model->viewMode != FilterbankViewMode::topologyPlus))
             return;
 
@@ -3757,9 +3737,7 @@ private:
     std::vector<OverviewPanHit> overviewPanHits;
     std::vector<TopologyPlusHit> topologyPlusHits;
     juce::Rectangle<float> octaveButton;
-    juce::Rectangle<float> thirdButton;
     juce::Rectangle<float> fsmButton;
-    juce::Rectangle<float> topologyButton;
     juce::Rectangle<float> topologyPlusButton;
     juce::Rectangle<float> topologyPlusFullButton;
     juce::Rectangle<float> topologyPlusAllButton;
@@ -9649,7 +9627,7 @@ private:
             case FilterbankViewMode::thirdOctave: return "thirdOctave";
             case FilterbankViewMode::fsm: return "fsm";
             case FilterbankViewMode::overview: return "overview";
-            case FilterbankViewMode::topology: return "topology";
+            case FilterbankViewMode::topology: return "topologyPlus";
             case FilterbankViewMode::topologyPlus: return "topologyPlus";
         }
 
@@ -9661,7 +9639,7 @@ private:
         if (text == "thirdOctave") return FilterbankViewMode::thirdOctave;
         if (text == "fsm") return FilterbankViewMode::fsm;
         if (text == "overview") return FilterbankViewMode::overview;
-        if (text == "topology") return FilterbankViewMode::topology;
+        if (text == "topology") return FilterbankViewMode::topologyPlus;
         if (text == "topologyPlus") return FilterbankViewMode::topologyPlus;
         return FilterbankViewMode::octave;
     }
@@ -9674,7 +9652,7 @@ private:
             case FilterbankViewMode::thirdOctave: return "1/3 octave";
             case FilterbankViewMode::fsm: return "FSM";
             case FilterbankViewMode::overview: return "Overview";
-            case FilterbankViewMode::topology: return "Topology";
+            case FilterbankViewMode::topology: return "Topology+";
             case FilterbankViewMode::topologyPlus: return "Topology+";
         }
 
