@@ -2048,8 +2048,9 @@ private:
             const auto ruleText = juce::String (machine.rules.size());
             const auto laneText = juce::String (laneCount) + "/" + juce::String (state.lanes.size());
 
-            drawOverviewCell (g, cells.removeFromLeft (54.0f), formatOverviewHz (std::sqrt (band.lowHz * band.highHz)), selected ? colour.brighter (0.10f) : mutedInk());
-            drawOverviewCell (g, cells.removeFromLeft (92.0f), formatOverviewRange (band.lowHz, band.highHz), mutedInk().withAlpha (0.82f));
+            const auto bandHighHz = model->highHzForBandSpan (band);
+            drawOverviewCell (g, cells.removeFromLeft (54.0f), formatOverviewHz (std::sqrt (band.lowHz * bandHighHz)), selected ? colour.brighter (0.10f) : mutedInk());
+            drawOverviewCell (g, cells.removeFromLeft (92.0f), formatOverviewRange (band.lowHz, bandHighHz), mutedInk().withAlpha (0.82f));
             auto clockCell = cells.removeFromLeft (98.0f);
             drawOverviewButton (g, clockCell.reduced (2.0f, 3.0f), clockText, band.syncToFilterbankClock ? accentB().brighter (0.05f) : accentA().brighter (0.02f), selected);
             drawOverviewCell (g, cells.removeFromLeft (124.0f), "S" + juce::String (machine.selectedState + 1) + " " + state.name, selected ? ink() : mutedInk());
@@ -2170,7 +2171,7 @@ private:
         g.drawFittedText (band.name, label.removeFromTop (22.0f).toNearestInt(), juce::Justification::centredLeft, 1);
         g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
         g.setColour (mutedInk().withAlpha (0.70f));
-        g.drawFittedText ((band.syncToFilterbankClock ? "Sync" : "Free") + juce::String (" | ") + formatOverviewRange (band.lowHz, band.highHz),
+        g.drawFittedText ((band.syncToFilterbankClock ? "Sync" : "Free") + juce::String (" | ") + formatOverviewRange (band.lowHz, model->highHzForBandSpan (band)),
                           label.toNearestInt(), juce::Justification::centredLeft, 2);
 
         bandHits.push_back ({ row.expanded (0.0f, 2.0f), band.index, BandHitAction::select });
@@ -2388,7 +2389,7 @@ private:
             if (! isTopologyPlusBandVisible (band))
                 continue;
 
-            const auto centreHz = std::sqrt (band.lowHz * band.highHz);
+            const auto centreHz = model->centreHzForBandSpan (band);
             const auto x = logX (centreHz, mapArea.reduced (30.0f, 0.0f));
             const auto lane = band.octaveGroup % rows;
             const auto y = mapArea.getY() + rowHeight * (static_cast<float> (lane) + 0.54f)
@@ -2397,6 +2398,12 @@ private:
         }
 
         drawTopologyPlusInteractions (g, islandCentres, screenIslandRadius);
+
+        for (const auto& island : islandCentres)
+        {
+            const auto& band = model->bands[static_cast<size_t> (island.first)];
+            drawTopologyPlusBandSpan (g, mapArea, band, island.second, rowHeight, band.index == model->selectedBand);
+        }
 
         for (const auto& island : islandCentres)
         {
@@ -2436,6 +2443,32 @@ private:
         }
 
         return accentB();
+    }
+
+    void drawTopologyPlusBandSpan (juce::Graphics& g,
+                                   juce::Rectangle<float> mapArea,
+                                   const FilterBand& band,
+                                   juce::Point<float> centre,
+                                   float rowHeight,
+                                   bool selected)
+    {
+        const auto span = model->clampedSpanForBand (band);
+        if (span <= 1)
+            return;
+
+        const auto lowPoint = topologyPlusMapToScreen ({ logX (band.lowHz, mapArea.reduced (30.0f, 0.0f)), centre.y });
+        const auto highPoint = topologyPlusMapToScreen ({ logX (model->highHzForBandSpan (band), mapArea.reduced (30.0f, 0.0f)), centre.y });
+        auto spanArea = juce::Rectangle<float> (lowPoint.x, centre.y - rowHeight * topologyPlusZoom * 0.19f,
+                                                highPoint.x - lowPoint.x, rowHeight * topologyPlusZoom * 0.38f)
+                            .expanded (12.0f, 0.0f);
+        if (spanArea.getWidth() < 8.0f)
+            spanArea.setWidth (8.0f);
+
+        const auto colour = graphColour (band.index);
+        g.setColour (colour.withAlpha (selected ? 0.18f : 0.08f));
+        g.fillRoundedRectangle (spanArea, juce::jmin (18.0f, spanArea.getHeight() * 0.48f));
+        g.setColour (colour.withAlpha (selected ? 0.48f : 0.22f));
+        g.drawRoundedRectangle (spanArea.reduced (0.5f), juce::jmin (18.0f, spanArea.getHeight() * 0.48f), selected ? 1.2f : 0.7f);
     }
 
     void drawTopologyPlusInteractions (juce::Graphics& g,
@@ -2706,8 +2739,9 @@ private:
         g.drawFittedText (band.name + " band FSM", titleArea.removeFromLeft (210.0f).toNearestInt(), juce::Justification::centredLeft, 1);
         g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
         g.setColour (mutedInk().withAlpha (0.78f));
-        g.drawFittedText (formatOverviewRange (band.lowHz, band.highHz)
+        g.drawFittedText (formatOverviewRange (band.lowHz, model->highHzForBandSpan (band))
                           + " | " + juce::String (band.machine.getStateCount()) + " states"
+                          + " | " + juce::String (model->clampedSpanForBand (band)) + " bands"
                           + " | " + (band.syncToFilterbankClock ? "Sync" : "Free"),
                           titleArea.toNearestInt(), juce::Justification::centredLeft, 1);
 
@@ -3144,7 +3178,7 @@ private:
 
     void drawBand (juce::Graphics& g, juce::Rectangle<float> area, const FilterBand& band, bool selected, float lift)
     {
-        drawBand (g, area, band.index, band.name, band.lowHz, band.highHz, selected, lift,
+        drawBand (g, area, band.index, band.name, band.lowHz, model->highHzForBandSpan (band), selected, lift,
                   "S" + juce::String (band.machine.selectedState + 1),
                   activeLaneCountForBand (band),
                   aggregateMeterForBand (band),
@@ -6396,6 +6430,10 @@ public:
         addAndMakeVisible (trackSectionTitle);
         addAndMakeVisible (breadcrumbLabel);
         addAndMakeVisible (stateSummaryLabel);
+        addAndMakeVisible (bandSpanLabel);
+        addAndMakeVisible (bandSpanMinus);
+        addAndMakeVisible (bandSpanEditor);
+        addAndMakeVisible (bandSpanPlus);
         addAndMakeVisible (stateTempoLabel);
         addAndMakeVisible (stateTempoEditor);
         addAndMakeVisible (stateMeterLabel);
@@ -6452,6 +6490,16 @@ public:
         stateSummaryLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
         stateSummaryLabel.setColour (juce::Label::textColourId, ink());
         stateSummaryLabel.setJustificationType (juce::Justification::centredLeft);
+        bandSpanLabel.setText ("Bands", juce::dontSendNotification);
+        bandSpanLabel.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+        bandSpanLabel.setColour (juce::Label::textColourId, mutedInk());
+        bandSpanMinus.setButtonText ("-");
+        bandSpanPlus.setButtonText ("+");
+        configureSmallNumberEditor (bandSpanEditor, 2, "0123456789");
+        bandSpanEditor.onReturnKey = [this] { commitBandSpanEditor(); };
+        bandSpanEditor.onFocusLost = [this] { commitBandSpanEditor(); };
+        bandSpanMinus.onClick = [this] { adjustSelectedBandSpan (-1); };
+        bandSpanPlus.onClick = [this] { adjustSelectedBandSpan (1); };
         freezeStatusLabel.setFont (juce::FontOptions (11.5f, juce::Font::bold));
         freezeStatusLabel.setColour (juce::Label::textColourId, mutedInk());
         freezeStatusLabel.setJustificationType (juce::Justification::centredLeft);
@@ -7443,7 +7491,7 @@ public:
                 {
                     host.setLaneEffectiveMix (lane, effectiveFilterbankVolume (lane));
                     primeMeterForLane (lane);
-                    host.playInBand (lane, getSclangPathOverride(), band.lowHz, band.highHz);
+                    host.playInBand (lane, getSclangPathOverride(), band.lowHz, filterbank.highHzForBandSpan (band));
                 }
 
                 refreshControls();
@@ -7984,6 +8032,11 @@ public:
         statePaneInner.removeFromTop (2);
         stateInfoTitle.setBounds (statePaneInner.removeFromTop (18).reduced (2, 0));
         stateSummaryLabel.setBounds (statePaneInner.removeFromTop (24).reduced (2, 0));
+        auto bandSpanRow = statePaneInner.removeFromTop (30);
+        bandSpanLabel.setBounds (bandSpanRow.removeFromLeft (54).reduced (2, 4));
+        bandSpanMinus.setBounds (bandSpanRow.removeFromLeft (28).reduced (2, 4));
+        bandSpanEditor.setBounds (bandSpanRow.removeFromLeft (42).reduced (2, 4));
+        bandSpanPlus.setBounds (bandSpanRow.removeFromLeft (28).reduced (2, 4));
         auto stateTimingRow = statePaneInner.removeFromTop (34);
         stateTempoLabel.setBounds (stateTimingRow.removeFromLeft (54).reduced (2, 4));
         stateTempoEditor.setBounds (stateTimingRow.removeFromLeft (66).reduced (2, 4));
@@ -9054,6 +9107,7 @@ private:
             bandObject->setProperty ("name", band.name);
             bandObject->setProperty ("lowHz", band.lowHz);
             bandObject->setProperty ("highHz", band.highHz);
+            bandObject->setProperty ("bandSpan", band.bandSpan);
             bandObject->setProperty ("octaveGroup", band.octaveGroup);
             bandObject->setProperty ("syncToFilterbankClock", band.syncToFilterbankClock);
             bandObject->setProperty ("resetOnSync", band.resetOnSync);
@@ -9238,6 +9292,7 @@ private:
                 band.name = bandVar.getProperty ("name", band.name).toString();
                 band.lowHz = static_cast<double> (bandVar.getProperty ("lowHz", band.lowHz));
                 band.highHz = static_cast<double> (bandVar.getProperty ("highHz", band.highHz));
+                band.bandSpan = juce::jlimit (1, filterbank.maxSpanForBand (band.index), static_cast<int> (bandVar.getProperty ("bandSpan", band.bandSpan)));
                 band.octaveGroup = static_cast<int> (bandVar.getProperty ("octaveGroup", band.octaveGroup));
                 band.syncToFilterbankClock = static_cast<bool> (bandVar.getProperty ("syncToFilterbankClock", band.syncToFilterbankClock));
                 band.resetOnSync = static_cast<bool> (bandVar.getProperty ("resetOnSync", band.resetOnSync));
@@ -10148,6 +10203,37 @@ private:
         }
     }
 
+    void commitBandSpanEditor()
+    {
+        if (workspaceMode != WorkspaceMode::filterbank)
+            return;
+
+        setSelectedBandSpan (bandSpanEditor.getText().getIntValue());
+    }
+
+    void adjustSelectedBandSpan (int delta)
+    {
+        if (workspaceMode != WorkspaceMode::filterbank)
+            return;
+
+        setSelectedBandSpan (filterbank.selectedBandRef().bandSpan + delta);
+    }
+
+    void setSelectedBandSpan (int newSpan)
+    {
+        auto& band = filterbank.selectedBandRef();
+        newSpan = juce::jlimit (1, filterbank.maxSpanForBand (band.index), newSpan <= 0 ? band.bandSpan : newSpan);
+        bandSpanEditor.setText (juce::String (newSpan), false);
+
+        if (newSpan == band.bandSpan)
+            return;
+
+        band.bandSpan = newSpan;
+        setBandForMachineLanes (band);
+        markMachineDirty();
+        refreshControls();
+    }
+
     void commitStateTimingEditors()
     {
         auto& inspected = workspaceMode == WorkspaceMode::filterbank ? filterbank.selectedMachineRef()
@@ -10888,7 +10974,7 @@ private:
 
     void setBandForMachineLanes (FilterBand& band)
     {
-        setBandForMachineLanesRecursive (band.machine, band.lowHz, band.highHz);
+        setBandForMachineLanesRecursive (band.machine, band.lowHz, filterbank.highHzForBandSpan (band));
     }
 
     void setBandForMachineLanesRecursive (MachineModel& model, double lowHz, double highHz)
@@ -10940,7 +11026,7 @@ private:
         auto& state = model.state (stateIndex);
         for (auto& lane : state.lanes)
         {
-            host.setLaneBand (lane, band.lowHz, band.highHz);
+            host.setLaneBand (lane, band.lowHz, filterbank.highHzForBandSpan (band));
             host.setLaneEffectiveMix (lane, effectiveFilterbankVolume (lane));
             if (shouldPlayFilterbankLane (lane))
                 lanesToStart.push_back (&lane);
@@ -11515,6 +11601,10 @@ private:
         navigator.setVisible (true);
         stateTempoLabel.setVisible (true);
         stateTempoEditor.setVisible (true);
+        bandSpanLabel.setVisible (false);
+        bandSpanMinus.setVisible (false);
+        bandSpanEditor.setVisible (false);
+        bandSpanPlus.setVisible (false);
         stateMeterLabel.setVisible (true);
         stateMeterBeatsEditor.setVisible (true);
         stateMeterSlashLabel.setVisible (true);
@@ -11673,8 +11763,11 @@ private:
         breadcrumbLabel.setText (juce::String ("Filterbank / ") + filterbankViewModeLabel (filterbank.viewMode),
                                  juce::dontSendNotification);
         stateInfoTitle.setText ("Band State", juce::dontSendNotification);
-        stateSummaryLabel.setText (displayHzForUi (std::sqrt (band.lowHz * band.highHz)) + " | " + displayHzRangeForUi (band.lowHz, band.highHz)
+        const auto bandSpan = filterbank.clampedSpanForBand (band);
+        const auto bandHighHz = filterbank.highHzForBandSpan (band);
+        stateSummaryLabel.setText (displayHzForUi (std::sqrt (band.lowHz * bandHighHz)) + " | " + displayHzRangeForUi (band.lowHz, bandHighHz)
                                       + " | group " + juce::String (band.octaveGroup + 1)
+                                      + " | " + juce::String (bandSpan) + (bandSpan == 1 ? " band" : " bands")
                                       + " | " + state.name
                                       + " | " + juce::String (state.lanes.size()) + (state.lanes.size() == 1 ? " lane" : " lanes")
                                       + (lane.playing ? " | active" : ""),
@@ -11683,6 +11776,10 @@ private:
         navigator.setVisible (false);
         stateTempoLabel.setVisible (true);
         stateTempoEditor.setVisible (true);
+        bandSpanLabel.setVisible (true);
+        bandSpanMinus.setVisible (true);
+        bandSpanEditor.setVisible (true);
+        bandSpanPlus.setVisible (true);
         stateMeterLabel.setVisible (true);
         stateMeterBeatsEditor.setVisible (true);
         stateMeterSlashLabel.setVisible (true);
@@ -11708,7 +11805,7 @@ private:
         freezeStatusLabel.setVisible (true);
         freezeStatusLabel.setText ((band.syncToFilterbankClock ? (band.resetOnSync ? "Sync + reset" : "Sync") : "Free")
                                    + juce::String (" band FSM: ")
-                                   + displayHzRangeForUi (band.lowHz, band.highHz),
+                                   + displayHzRangeForUi (band.lowHz, bandHighHz),
                                    juce::dontSendNotification);
         refreezeLaneButton.setVisible (false);
         refreezeStaleButton.setVisible (false);
@@ -11724,6 +11821,9 @@ private:
         topStateCountEditor.setText (juce::String (bandStateCount), false);
         topStateCountMinus.setEnabled (bandStateCount > 1);
         topStateCountPlus.setEnabled (bandStateCount < maxStateCount);
+        bandSpanEditor.setText (juce::String (bandSpan), false);
+        bandSpanMinus.setEnabled (bandSpan > 1);
+        bandSpanPlus.setEnabled (bandSpan < filterbank.maxSpanForBand (band.index));
         stateTempoEditor.setText (juce::String (state.tempoBpm, 1), false);
         stateMeterBeatsEditor.setText (juce::String (state.beatsPerBar), false);
         stateMeterUnitEditor.setText (juce::String (state.beatUnit), false);
@@ -11885,6 +11985,10 @@ private:
     juce::Label trackSectionTitle;
     juce::Label breadcrumbLabel;
     juce::Label stateSummaryLabel;
+    juce::Label bandSpanLabel;
+    juce::TextButton bandSpanMinus;
+    juce::TextEditor bandSpanEditor;
+    juce::TextButton bandSpanPlus;
     juce::Label stateTempoLabel;
     juce::TextEditor stateTempoEditor;
     juce::Label stateMeterLabel;

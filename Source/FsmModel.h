@@ -530,6 +530,7 @@ struct FilterBand
     juce::String name;
     double lowHz = 20.0;
     double highHz = 25.0;
+    int bandSpan = 1;
     int octaveGroup = 0;
     MachineModel machine;
     bool syncToFilterbankClock = true;
@@ -624,7 +625,28 @@ public:
     juce::String selectedBandRangeText() const
     {
         const auto& band = selectedBandRef();
-        return formatHz (band.lowHz) + " - " + formatHz (band.highHz);
+        return formatHz (band.lowHz) + " - " + formatHz (highHzForBandSpan (band));
+    }
+
+    int maxSpanForBand (int bandIndex) const
+    {
+        return juce::jmax (1, getBandCount() - juce::jlimit (0, getBandCount() - 1, bandIndex));
+    }
+
+    int clampedSpanForBand (const FilterBand& band) const
+    {
+        return juce::jlimit (1, maxSpanForBand (band.index), band.bandSpan);
+    }
+
+    double highHzForBandSpan (const FilterBand& band) const
+    {
+        const auto endIndex = juce::jlimit (0, getBandCount() - 1, band.index + clampedSpanForBand (band) - 1);
+        return bands[static_cast<size_t> (endIndex)].highHz;
+    }
+
+    double centreHzForBandSpan (const FilterBand& band) const
+    {
+        return std::sqrt (band.lowHz * highHzForBandSpan (band));
     }
 
     static juce::String formatHz (double hz)
