@@ -5046,6 +5046,7 @@ public:
     std::function<void (int, float)> onGainChanged;
     std::function<void (int, float)> onPanChanged;
     std::function<void (int, juce::String)> onAutomationRequested;
+    std::function<void (int, juce::String)> onAutomationToggled;
 
     MixerComponent()
     {
@@ -5119,13 +5120,13 @@ public:
 
             if (meterAutomationDot.contains (event.getPosition()))
             {
-                if (onAutomationRequested)
-                    onAutomationRequested (i, "meter");
+                if (onAutomationToggled)
+                    onAutomationToggled (i, "meter");
             }
             else if (panAutomationDot.contains (event.getPosition()))
             {
-                if (onAutomationRequested)
-                    onAutomationRequested (i, "pan");
+                if (onAutomationToggled)
+                    onAutomationToggled (i, "pan");
             }
             else if (volumeArea.contains (event.getPosition()))
             {
@@ -5169,6 +5170,33 @@ public:
 
             repaint();
             return;
+        }
+    }
+
+    void mouseDoubleClick (const juce::MouseEvent& event) override
+    {
+        if (state == nullptr)
+            return;
+
+        for (int i = 0; i < static_cast<int> (state->lanes.size()); ++i)
+        {
+            const auto row = getRowBounds (i);
+            if (! row.contains (event.getPosition()))
+                continue;
+
+            if (getMeterAutomationDotBounds (row).contains (event.getPosition()))
+            {
+                if (onAutomationRequested)
+                    onAutomationRequested (i, "meter");
+                return;
+            }
+
+            if (getPanAutomationDotBounds (row).contains (event.getPosition()))
+            {
+                if (onAutomationRequested)
+                    onAutomationRequested (i, "pan");
+                return;
+            }
         }
     }
 
@@ -7777,6 +7805,17 @@ public:
             }
 
             openInspectorLaneAutomation (newIndex, parameter);
+        };
+
+        mixer.onAutomationToggled = [this] (int newIndex, juce::String parameter)
+        {
+            if (workspaceMode == WorkspaceMode::filterbank)
+            {
+                toggleFilterbankLaneAutomation (newIndex, parameter);
+                return;
+            }
+
+            toggleInspectorLaneAutomation (newIndex, parameter);
         };
 
         codeDocument.addListener (this);
@@ -12071,6 +12110,26 @@ private:
         lane.preparedBridge = -1;
     }
 
+    bool toggleLaneAutomation (Lane& lane, const juce::String& parameter)
+    {
+        auto* automation = automationForParameter (lane, parameter);
+        if (automation == nullptr)
+        {
+            Lane::Automation created;
+            created.parameter = parameter;
+            created.enabled = false;
+            lane.automations.push_back (std::move (created));
+            return false;
+        }
+
+        if (automation->script.trim().isEmpty())
+            return false;
+
+        automation->enabled = ! automation->enabled;
+        lane.preparedBridge = -1;
+        return true;
+    }
+
     void openAutomationWindowForLane (Lane& lane,
                                       const juce::String& parameter,
                                       std::function<void (juce::String, juce::String, bool)> saveHandler)
@@ -12109,6 +12168,22 @@ private:
         });
     }
 
+    void toggleFilterbankLaneAutomation (int newIndex, const juce::String& parameter)
+    {
+        auto& bandMachine = filterbank.selectedMachineRef();
+        bandMachine.selectedLane = juce::jlimit (0, bandMachine.getLaneCount (bandMachine.selectedState) - 1, newIndex);
+        auto& lane = bandMachine.selectedLaneRef();
+        if (! toggleLaneAutomation (lane, parameter))
+        {
+            openFilterbankLaneAutomation (newIndex, parameter);
+            return;
+        }
+
+        markMachineDirty();
+        syncFilterbankPlayback();
+        refreshControls();
+    }
+
     void openInspectorLaneAutomation (int newIndex, const juce::String& parameter)
     {
         auto& inspected = currentInspectorMachine();
@@ -12126,6 +12201,22 @@ private:
                 refreshControls();
             }
         });
+    }
+
+    void toggleInspectorLaneAutomation (int newIndex, const juce::String& parameter)
+    {
+        auto& inspected = currentInspectorMachine();
+        inspected.selectedLane = juce::jlimit (0, inspected.getLaneCount (inspected.selectedState) - 1, newIndex);
+        auto& lane = inspected.selectedLaneRef();
+        if (! toggleLaneAutomation (lane, parameter))
+        {
+            openInspectorLaneAutomation (newIndex, parameter);
+            return;
+        }
+
+        markMachineDirty();
+        applyAllMixToHost();
+        refreshControls();
     }
 
     void setInspectorLaneVolume (int newIndex, float volume)
