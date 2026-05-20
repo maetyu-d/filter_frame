@@ -6469,7 +6469,7 @@ public:
 
         exportRangeBox.addItem ("Project cycle", 1);
         exportRangeBox.addItem ("Selected state", 2);
-        exportRangeBox.addItem ("Custom length", 3);
+        exportRangeBox.addItem ("Specified duration", 3);
         exportRangeBox.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff111318));
         exportRangeBox.setColour (juce::ComboBox::textColourId, ink());
         exportRangeBox.setColour (juce::ComboBox::outlineColourId, hairline());
@@ -6768,7 +6768,7 @@ public:
 
         rangeLabel.setText ("Range", juce::dontSendNotification);
         cyclesLabel.setText ("Cycles", juce::dontSendNotification);
-        customLabel.setText ("Seconds", juce::dontSendNotification);
+        customLabel.setText ("Duration", juce::dontSendNotification);
         tailLabel.setText ("Tail", juce::dontSendNotification);
         formatLabel.setText ("Format", juce::dontSendNotification);
         destinationLabel.setText ("Destination", juce::dontSendNotification);
@@ -6784,7 +6784,7 @@ public:
 
         rangeBox.addItem ("Project cycle", 1);
         rangeBox.addItem ("Selected state", 2);
-        rangeBox.addItem ("Custom length", 3);
+        rangeBox.addItem ("Specified duration", 3);
         formatBox.addItem ("16-bit WAV", 1);
         formatBox.addItem ("24-bit WAV", 2);
         formatBox.addItem ("32-bit float WAV", 3);
@@ -6921,7 +6921,8 @@ private:
     void refreshDuration()
     {
         const auto seconds = getDurationSeconds ? getDurationSeconds (settings) : 0.0;
-        durationLabel.setText ("Estimated length: " + juce::String (seconds, 1) + "s", juce::dontSendNotification);
+        durationLabel.setText ((settings.range == "custom" ? "WAV duration: " : "Estimated WAV duration: ")
+                               + juce::String (seconds, 1) + "s", juce::dontSendNotification);
         durationLabel.setFont (juce::FontOptions (12.5f, juce::Font::bold));
         durationLabel.setColour (juce::Label::textColourId, mutedInk());
     }
@@ -10675,7 +10676,7 @@ private:
 
         if (settings.range == "custom")
         {
-            musicalSeconds = settings.customSeconds;
+            return juce::jlimit (1.0, 1800.0, settings.customSeconds);
         }
         else if (settings.range == "state")
         {
