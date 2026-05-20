@@ -35,6 +35,13 @@ struct SuperColliderAudioSettings
     }
 };
 
+struct ExportLaneBand
+{
+    juce::String laneId;
+    double lowHz = 20.0;
+    double highHz = 20000.0;
+};
+
 class SuperColliderHost
 {
 public:
@@ -54,7 +61,8 @@ public:
                         double durationSeconds,
                         double rate,
                         int startState,
-                        const juce::String& sampleFormat);
+                        const juce::String& sampleFormat,
+                        const std::vector<ExportLaneBand>& laneBands = {});
     void setLaneVolume (Lane& lane);
     void setLaneMix (Lane& lane);
     void setLaneEffectiveVolume (const Lane& lane, float volume);

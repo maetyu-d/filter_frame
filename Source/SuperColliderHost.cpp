@@ -393,7 +393,8 @@ bool SuperColliderHost::exportMachine (MachineModel& model,
                                        double durationSeconds,
                                        double rate,
                                        int startState,
-                                       const juce::String& sampleFormat)
+                                       const juce::String& sampleFormat,
+                                       const std::vector<ExportLaneBand>& laneBands)
     {
         appendRuntimeLog ("export requested -> " + outputFile.getFullPathName());
         outputFile.getParentDirectory().createDirectory();
@@ -405,6 +406,9 @@ bool SuperColliderHost::exportMachine (MachineModel& model,
         }
 
         appendRuntimeLog ("export lanes prepared");
+
+        for (const auto& laneBand : laneBands)
+            sendBandCommand (laneBand.laneId, laneBand.lowHz, laneBand.highHz);
 
         configureMachine (model);
         appendRuntimeLog ("export machine configured");
