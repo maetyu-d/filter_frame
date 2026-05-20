@@ -9460,6 +9460,9 @@ private:
         const auto status = message[1].isInt32() ? message[1].getInt32() : static_cast<int> (getOscFloat (message[1]));
         const auto ok = status > 0;
         const auto cancelled = status < 0;
+        if (exportRecordingFilterbankOutput)
+            stopFilterbank();
+        exportRecordingFilterbankOutput = false;
         audioJobRunning = false;
         exportInProgress = false;
         exportCancelRequested = false;
@@ -10693,74 +10696,6 @@ private:
         return juce::jlimit (1.0, 1800.0, musicalSeconds + musicalReleaseSeconds + settings.tailSeconds);
     }
 
-    std::shared_ptr<MachineModel> buildFilterbankExportMachine (std::vector<ExportLaneBand>& laneBands)
-    {
-        auto exportModel = std::make_shared<MachineModel> ("ff_filterbank_export", "export-");
-        exportModel->setStateCount (1);
-        exportModel->states[0].name = "Filterbank export";
-        exportModel->states[0].lanes.clear();
-        exportModel->states[0].tempoBpm = 60.0;
-        exportModel->states[0].beatsPerBar = 4;
-        exportModel->states[0].beatUnit = 4;
-        exportModel->states[0].arrangementBars = 1;
-        exportModel->rules = { { 0, 0, 1.0f } };
-        exportModel->entryState = 0;
-        exportModel->selectedState = 0;
-        exportModel->selectedLane = 0;
-        laneBands.clear();
-
-        int exportLaneIndex = 0;
-        auto collectMachine = [&] (auto& self, const FilterBand& band, const MachineModel& sourceMachine) -> void
-        {
-            const auto stateIndex = juce::jlimit (0, sourceMachine.getStateCount() - 1, sourceMachine.selectedState);
-            const auto& state = sourceMachine.state (stateIndex);
-            for (const auto& sourceLane : state.lanes)
-            {
-                if (! shouldPlayFilterbankLane (sourceLane))
-                    continue;
-
-                auto lane = sourceLane;
-                lane.id = "export-b" + juce::String (band.index) + "-l" + juce::String (exportLaneIndex++);
-                lane.name = band.name + " " + sourceLane.name;
-                lane.volume = effectiveFilterbankVolume (sourceLane);
-                lane.gain = 1.0f;
-                lane.enabled = true;
-                lane.muted = false;
-                lane.solo = false;
-                lane.playing = false;
-                lane.preparedBridge = -1;
-
-                laneBands.push_back ({ lane.id, band.lowHz, filterbank.highHzForBandSpan (band) });
-                exportModel->states[0].lanes.push_back (std::move (lane));
-            }
-
-            if (auto* child = sourceMachine.childMachine (stateIndex))
-                self (self, band, *child);
-        };
-
-        for (const auto& band : filterbank.bands)
-            collectMachine (collectMachine, band, band.machine);
-
-        if (exportModel->states[0].lanes.empty())
-        {
-            auto& lane = filterbank.selectedLaneRef();
-            auto fallback = lane;
-            const auto& band = filterbank.selectedBandRef();
-            fallback.id = "export-selected-lane";
-            fallback.volume = juce::jlimit (0.0f, 2.0f, lane.volume * lane.gain);
-            fallback.gain = 1.0f;
-            fallback.enabled = true;
-            fallback.muted = false;
-            fallback.solo = false;
-            fallback.playing = false;
-            fallback.preparedBridge = -1;
-            laneBands.push_back ({ fallback.id, band.lowHz, filterbank.highHzForBandSpan (band) });
-            exportModel->states[0].lanes.push_back (std::move (fallback));
-        }
-
-        return exportModel;
-    }
-
     void chooseAudioExportFile()
     {
         projectChooser = std::make_unique<juce::FileChooser> ("Export ff:: Audio", defaultAudioExportFile(), "*.wav");
@@ -10803,11 +10738,11 @@ private:
         const auto startState = machine.selectedState;
         const auto sampleFormat = exportSettings.sampleFormat;
         const auto path = getSclangPathOverride();
-        std::vector<ExportLaneBand> exportLaneBands;
-        auto filterbankExportModel = workspaceMode == WorkspaceMode::filterbank
-            ? buildFilterbankExportMachine (exportLaneBands)
-            : std::shared_ptr<MachineModel>();
+        const auto recordingFilterbank = workspaceMode == WorkspaceMode::filterbank;
+        if (recordingFilterbank)
+            startFilterbank();
         exportInProgress = true;
+        exportRecordingFilterbankOutput = recordingFilterbank;
         exportCancelRequested = false;
         exportElapsedSeconds = 0.0;
         exportTotalSeconds = duration;
@@ -10815,13 +10750,13 @@ private:
         statusLabel.setText ("Exporting WAV", juce::dontSendNotification);
 
         auto safeThis = juce::Component::SafePointer<MainComponent> (this);
-        juce::Thread::launch ([safeThis, outputFile, duration, rate, startState, sampleFormat, path, filterbankExportModel, exportLaneBands]
+        juce::Thread::launch ([safeThis, outputFile, duration, rate, startState, sampleFormat, path, recordingFilterbank]
         {
             if (safeThis == nullptr)
                 return;
 
-            const auto ok = filterbankExportModel != nullptr
-                ? safeThis->host.exportMachine (*filterbankExportModel, path, outputFile, duration, rate, 0, sampleFormat, exportLaneBands)
+            const auto ok = recordingFilterbank
+                ? safeThis->host.recordOutput (path, outputFile, duration, sampleFormat)
                 : safeThis->host.exportMachine (safeThis->machine, path, outputFile, duration, rate, startState, sampleFormat);
             juce::MessageManager::callAsync ([safeThis, ok, outputFile]
             {
@@ -13275,6 +13210,7 @@ private:
     bool machinePrepared = false;
     bool exportInProgress = false;
     bool exportCancelRequested = false;
+    bool exportRecordingFilterbankOutput = false;
     double exportElapsedSeconds = 0.0;
     double exportTotalSeconds = 0.0;
     juce::String exportOutputPath;

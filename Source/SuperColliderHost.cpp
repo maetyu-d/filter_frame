@@ -393,8 +393,7 @@ bool SuperColliderHost::exportMachine (MachineModel& model,
                                        double durationSeconds,
                                        double rate,
                                        int startState,
-                                       const juce::String& sampleFormat,
-                                       const std::vector<ExportLaneBand>& laneBands)
+                                       const juce::String& sampleFormat)
     {
         appendRuntimeLog ("export requested -> " + outputFile.getFullPathName());
         outputFile.getParentDirectory().createDirectory();
@@ -406,9 +405,6 @@ bool SuperColliderHost::exportMachine (MachineModel& model,
         }
 
         appendRuntimeLog ("export lanes prepared");
-
-        for (const auto& laneBand : laneBands)
-            sendBandCommand (laneBand.laneId, laneBand.lowHz, laneBand.highHz);
 
         configureMachine (model);
         appendRuntimeLog ("export machine configured");
@@ -424,6 +420,28 @@ bool SuperColliderHost::exportMachine (MachineModel& model,
         appendRuntimeLog ("export command sent");
         setStatus ("Exporting audio");
         addLog ("Exporting audio to " + outputFile.getFullPathName());
+        return true;
+    }
+
+bool SuperColliderHost::recordOutput (const juce::String& sclangPath,
+                                      const juce::File& outputFile,
+                                      double durationSeconds,
+                                      const juce::String& sampleFormat)
+    {
+        appendRuntimeLog ("output recording requested -> " + outputFile.getFullPathName());
+        outputFile.getParentDirectory().createDirectory();
+
+        const juce::ScopedLock lock (hostLock);
+        if (! ensureBridgeRunningLocked (sclangPath))
+        {
+            appendRuntimeLog ("output recording bridge unavailable");
+            return false;
+        }
+
+        sendRecordOutputCommand (outputFile.getFullPathName(), durationSeconds, sampleFormat);
+        appendRuntimeLog ("output recording command sent");
+        setStatus ("Exporting audio");
+        addLog ("Recording output to " + outputFile.getFullPathName());
         return true;
     }
 
@@ -1235,6 +1253,53 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "        }).play(SystemClock);\n"
                "    });\n"
                "};\n"
+               "~wfRecordOutput = { |path, duration = 32, sampleFormat = \"int16\"|\n"
+               "    ~wfWhenReady.({\n"
+               "        Routine({\n"
+               "            var recBuf, recSynth, elapsed;\n"
+               "            if (~wfExporting) {\n"
+               "                \"WF_EXPORT_ERROR already exporting\".warn;\n"
+               "                ~wfJuce.sendMsg('/wf/exported', path, 0);\n"
+               "                ^nil;\n"
+               "            };\n"
+               "            duration = duration.clip(1, 1800);\n"
+               "            sampleFormat = if ([\"int16\", \"int24\", \"float\"].includes(sampleFormat).not, { \"int16\" }, { sampleFormat });\n"
+               "            ~wfExportCancel = false;\n"
+               "            ~wfExporting = true;\n"
+               "            (\"WF_RECORD_OUTPUT_START \" ++ path ++ \" duration=\" ++ duration ++ \" format=\" ++ sampleFormat).postln;\n"
+               "            recBuf = Buffer.alloc(s, 65536, 2);\n"
+               "            s.sync;\n"
+               "            recBuf.write(path, \"wav\", sampleFormat, 0, 0, true);\n"
+               "            s.sync;\n"
+               "            recSynth = { |buf| DiskOut.ar(buf, In.ar(0, 2)); Silent.ar(2) }.play(s, addAction: \\addToTail, args: [\\buf, recBuf]);\n"
+               "            s.sync;\n"
+               "            elapsed = 0.0;\n"
+               "            while { (elapsed < duration) and: { ~wfExportCancel.not } } {\n"
+               "                ~wfJuce.sendMsg('/wf/exportProgress', path, elapsed.min(duration), duration);\n"
+               "                0.25.wait;\n"
+               "                elapsed = elapsed + 0.25;\n"
+               "            };\n"
+               "            if (~wfExportCancel.not) { ~wfJuce.sendMsg('/wf/exportProgress', path, duration, duration); };\n"
+               "            if (recSynth.notNil) { recSynth.free };\n"
+               "            s.sync;\n"
+               "            if (~wfExportCancel) {\n"
+               "                recBuf.close;\n"
+               "                s.sync;\n"
+               "                recBuf.free;\n"
+               "                ~wfExporting = false;\n"
+               "                ~wfJuce.sendMsg('/wf/exported', path, -1);\n"
+               "                (\"WF_RECORD_OUTPUT_CANCELLED \" ++ path).postln;\n"
+               "                ^nil;\n"
+               "            };\n"
+               "            recBuf.close;\n"
+               "            s.sync;\n"
+               "            recBuf.free;\n"
+               "            ~wfExporting = false;\n"
+               "            ~wfJuce.sendMsg('/wf/exported', path, 1);\n"
+               "            (\"WF_RECORD_OUTPUT_DONE \" ++ path).postln;\n"
+               "        }).play(SystemClock);\n"
+               "    });\n"
+               "};\n"
                "~wfCancelExport = { ~wfExportCancel = true; };\n"
                "~wfTransition = { |stopKeys, playKeys, release, delay = 0|\n"
                "    ~wfWhenReady.({\n"
@@ -1425,6 +1490,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "OSCdef(\\wfPlay, { |msg| ~wfPlay.(msg[1].asString.asSymbol); }, '/wf/play');\n"
                "OSCdef(\\wfFreeze, { |msg| ~wfFreeze.(msg[1].asString.asSymbol, msg[2].asString, msg[3].asFloat); }, '/wf/freeze');\n"
                "OSCdef(\\wfExport, { |msg| ~wfExport.(msg[1].asString, msg[2].asFloat, msg[3].asFloat, msg[4].asInteger, msg[5].asString); }, '/wf/export');\n"
+               "OSCdef(\\wfRecordOutput, { |msg| ~wfRecordOutput.(msg[1].asString, msg[2].asFloat, msg[3].asString); }, '/wf/recordOutput');\n"
                "OSCdef(\\wfCancelExport, { ~wfCancelExport.(); }, '/wf/cancelExport');\n"
                "OSCdef(\\wfRunMachine, { |msg| ~wfRunMachine.(msg[1].asInteger, msg[2].asFloat); }, '/wf/runMachine');\n"
                "OSCdef(\\wfPauseMachine, { ~wfPauseMachine.(); }, '/wf/pauseMachine');\n"
@@ -1514,6 +1580,20 @@ void SuperColliderHost::sendExportCommand (const juce::String& audioPath, double
 
         if (oscConnected)
             oscSender.send ("/wf/export", audioPath, static_cast<float> (duration), static_cast<float> (clippedRate), clippedState, format);
+    }
+
+void SuperColliderHost::sendRecordOutputCommand (const juce::String& audioPath, double durationSeconds, const juce::String& sampleFormat)
+    {
+        const auto duration = juce::jlimit (1.0, 1800.0, durationSeconds);
+        const auto format = (sampleFormat == "int24" || sampleFormat == "float") ? sampleFormat : juce::String ("int16");
+
+        if (shouldUseCommandFallback())
+            writeCommand ("~wfRecordOutput.(" + scStringLiteral (audioPath) + ", "
+                          + scFloatLiteral (duration) + ", "
+                          + scStringLiteral (format) + ");\n");
+
+        if (oscConnected)
+            oscSender.send ("/wf/recordOutput", audioPath, static_cast<float> (duration), format);
     }
 
 void SuperColliderHost::sendCancelExportCommand()

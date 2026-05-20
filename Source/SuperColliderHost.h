@@ -35,13 +35,6 @@ struct SuperColliderAudioSettings
     }
 };
 
-struct ExportLaneBand
-{
-    juce::String laneId;
-    double lowHz = 20.0;
-    double highHz = 20000.0;
-};
-
 class SuperColliderHost
 {
 public:
@@ -61,8 +54,11 @@ public:
                         double durationSeconds,
                         double rate,
                         int startState,
-                        const juce::String& sampleFormat,
-                        const std::vector<ExportLaneBand>& laneBands = {});
+                        const juce::String& sampleFormat);
+    bool recordOutput (const juce::String& sclangPath,
+                       const juce::File& outputFile,
+                       double durationSeconds,
+                       const juce::String& sampleFormat);
     void setLaneVolume (Lane& lane);
     void setLaneMix (Lane& lane);
     void setLaneEffectiveVolume (const Lane& lane, float volume);
@@ -99,6 +95,7 @@ private:
     void sendLoadFrozenCommand (const juce::String& laneId, const juce::String& audioPath);
     void sendFreezeCommand (const juce::String& laneId, const juce::String& audioPath, double durationSeconds);
     void sendExportCommand (const juce::String& audioPath, double durationSeconds, double rate, int startState, const juce::String& sampleFormat);
+    void sendRecordOutputCommand (const juce::String& audioPath, double durationSeconds, const juce::String& sampleFormat);
     void sendCancelExportCommand();
     void sendPlayCommand (const juce::String& laneId);
     void sendTransitionCommand (const juce::StringArray& stopIds,
