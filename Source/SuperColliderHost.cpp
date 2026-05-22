@@ -280,7 +280,7 @@ void SuperColliderHost::play(Lane& lane, const juce::String& sclangPath)
         setStatus ("Playing " + lane.name);
     }
 
-void SuperColliderHost::playInBand (Lane& lane, const juce::String& sclangPath, double lowHz, double highHz)
+void SuperColliderHost::playInBand (Lane& lane, const juce::String& sclangPath, double lowHz, double highHz, int slopeMode)
     {
         appendRuntimeLog ("band play requested: " + lane.id);
         if (lane.playing)
@@ -297,7 +297,7 @@ void SuperColliderHost::playInBand (Lane& lane, const juce::String& sclangPath, 
             return;
 
         const juce::ScopedLock lock (hostLock);
-        sendBandCommand (lane.id, lowHz, highHz);
+        sendBandCommand (lane.id, lowHz, highHz, slopeMode);
         sendPlayCommand (lane.id);
         lane.playing = true;
         setStatus ("Playing " + lane.name);
@@ -487,12 +487,12 @@ void SuperColliderHost::setLaneEffectiveMix(const Lane& lane, float volume)
             sendMixCommand (lane.id, juce::jlimit (0.0f, 2.0f, volume), lane.pan);
     }
 
-void SuperColliderHost::setLaneBand (const Lane& lane, double lowHz, double highHz)
+void SuperColliderHost::setLaneBand (const Lane& lane, double lowHz, double highHz, int slopeMode)
     {
         const juce::ScopedLock lock (hostLock);
 
         if (bridgeProcess != nullptr && bridgeProcess->isRunning())
-            sendBandCommand (lane.id, lowHz, highHz);
+            sendBandCommand (lane.id, lowHz, highHz, slopeMode);
     }
 
 void SuperColliderHost::stop(Lane& lane, double releaseSeconds)
@@ -846,6 +846,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "~wfLaneRouters = IdentityDictionary.new;\n"
                "~wfBandLows = IdentityDictionary.new;\n"
                "~wfBandHighs = IdentityDictionary.new;\n"
+               "~wfBandSlopes = IdentityDictionary.new;\n"
                "~wfMeterIds = IdentityDictionary.new;\n"
                "~wfMeterKeys = IdentityDictionary.new;\n"
                "~wfNextMeterId = 1;\n"
@@ -921,17 +922,19 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "    SendReply.kr(meterTrig, '/wf/laneMeter', [rms, peak], replyId);\n"
                "    Out.ar(0, out);\n"
                "}).add;\n"
-               "SynthDef(\\wfFrozenPlayer, { |buf = 0, gate = 1, fade = 0.006, wfVol = 1, wfPan = 0, wfLow = 20, wfHigh = 20000, wfMasterGain = 0.1, replyId = 0|\n"
+               "SynthDef(\\wfFrozenPlayer, { |buf = 0, gate = 1, fade = 0.006, wfVol = 1, wfPan = 0, wfLow = 20, wfHigh = 20000, wfSlope = 0, wfMasterGain = 0.1, replyId = 0|\n"
                "    var sig = PlayBuf.ar(2, buf, BufRateScale.kr(buf), loop: 1);\n"
                "    var maxFilterHz = ((SampleRate.ir * 0.5) - 40).clip(80, 20000);\n"
                "    var low = Lag.kr(wfLow.clip(20, maxFilterHz - 5), 0.045);\n"
                "    var high = Lag.kr(wfHigh.clip(low + 5, maxFilterHz), 0.045);\n"
+               "    var slope = Lag.kr(wfSlope.clip(0, 2), 0.045);\n"
+               "    var one, two, three;\n"
                "    var env = EnvGen.kr(Env.asr(fade.max(0.001), 1, fade.max(0.001)), gate, doneAction: 2);\n"
                "    var controlled, mono, meterTrig, rms, peak;\n"
-               "    3.do {\n"
-               "        sig = BHiPass4.ar(sig, low, 0.56);\n"
-               "        sig = BLowPass4.ar(sig, high, 0.56);\n"
-               "    };\n"
+               "    one = BLowPass4.ar(BHiPass4.ar(sig, low, 0.56), high, 0.56);\n"
+               "    two = BLowPass4.ar(BHiPass4.ar(one, low, 0.56), high, 0.56);\n"
+               "    three = BLowPass4.ar(BHiPass4.ar(two, low, 0.56), high, 0.56);\n"
+               "    sig = SelectX.ar(slope, [three, two, one]);\n"
                "    sig = LeakDC.ar(sig);\n"
                "    controlled = Balance2.ar(sig[0], sig[1], Lag.kr(wfPan.clip(-1, 1), 0.05)) * env * Lag.kr(wfVol, 0.05) * Lag.kr(wfMasterGain.clip(0, 1.5), 0.08);\n"
                "    mono = Mix(controlled) * 0.5;\n"
@@ -975,20 +978,26 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "~wfApplyBand = { |key, sig|\n"
                "    var low = ~wfBandLows[key];\n"
                "    var high = ~wfBandHighs[key];\n"
+               "    var slopeMode = ~wfBandSlopes[key] ? 0;\n"
                "    var maxFilterHz = ((SampleRate.ir * 0.5) - 40).clip(80, 20000);\n"
                "    var initialLow;\n"
                "    var initialHigh;\n"
                "    var edgeLag;\n"
+               "    var slope;\n"
+               "    var one;\n"
+               "    var two;\n"
+               "    var three;\n"
                "    if (low.notNil and: { high.notNil }) {\n"
                "        initialLow = low.clip(20, 19900);\n"
                "        initialHigh = high.clip(initialLow + 5, 20000);\n"
                "        edgeLag = 0.045;\n"
                "        low = Lag.kr(\\wfLow.kr(initialLow), edgeLag).clip(20, maxFilterHz - 5);\n"
                "        high = Lag.kr(\\wfHigh.kr(initialHigh), edgeLag).clip(low + 5, maxFilterHz);\n"
-               "        3.do {\n"
-               "            sig = BHiPass4.ar(sig, low, 0.56);\n"
-               "            sig = BLowPass4.ar(sig, high, 0.56);\n"
-               "        };\n"
+               "        slope = Lag.kr(\\wfSlope.kr(slopeMode.clip(0, 2)), edgeLag).clip(0, 2);\n"
+               "        one = BLowPass4.ar(BHiPass4.ar(sig, low, 0.56), high, 0.56);\n"
+               "        two = BLowPass4.ar(BHiPass4.ar(one, low, 0.56), high, 0.56);\n"
+               "        three = BLowPass4.ar(BHiPass4.ar(two, low, 0.56), high, 0.56);\n"
+               "        sig = SelectX.ar(slope, [three, two, one]);\n"
                "        sig = LeakDC.ar(sig);\n"
                "    };\n"
                "    sig;\n"
@@ -1056,15 +1065,17 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "        };\n"
                "    };\n"
                "};\n"
-               "~wfSetBand = { |key, low, high|\n"
+               "~wfSetBand = { |key, low, high, slopeMode = 0|\n"
                "    var obj;\n"
                "    var maxFilterHz = (((s.sampleRate ? 44100) * 0.5) - 40).clip(80, 20000);\n"
                "    low = low.clip(20, maxFilterHz - 5);\n"
                "    high = high.clip(low + 5, maxFilterHz);\n"
+               "    slopeMode = slopeMode.asInteger.clip(0, 2);\n"
                "    ~wfBandLows[key] = low;\n"
                "    ~wfBandHighs[key] = high;\n"
+               "    ~wfBandSlopes[key] = slopeMode;\n"
                "    obj = ~wfObjects[key];\n"
-               "    if (obj.notNil and: { obj.respondsTo(\\set) }) { obj.set(\\wfLow, low, \\wfHigh, high) };\n"
+               "    if (obj.notNil and: { obj.respondsTo(\\set) }) { obj.set(\\wfLow, low, \\wfHigh, high, \\wfSlope, slopeMode) };\n"
                "};\n"
                "~wfStop = { |key, release|\n"
                "    var obj = ~wfObjects[key];\n"
@@ -1104,6 +1115,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "    ~wfPans = IdentityDictionary.new;\n"
                "    ~wfBandLows = IdentityDictionary.new;\n"
                "    ~wfBandHighs = IdentityDictionary.new;\n"
+               "    ~wfBandSlopes = IdentityDictionary.new;\n"
                "    ~wfConfiguredMachine = nil;\n"
                "    ~wfMachineTokens.keysValuesDo { |key, token| ~wfMachineTokens[key] = token + 1 };\n"
                "    \"WF_PROJECT_CLEARED\".postln;\n"
@@ -1122,6 +1134,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "    ~wfLaneRouters = IdentityDictionary.new;\n"
                "    ~wfBandLows = IdentityDictionary.new;\n"
                "    ~wfBandHighs = IdentityDictionary.new;\n"
+               "    ~wfBandSlopes = IdentityDictionary.new;\n"
                "    ~wfMeterIds = IdentityDictionary.new;\n"
                "    ~wfMeterKeys = IdentityDictionary.new;\n"
                "    ~wfNextMeterId = 1;\n"
@@ -1132,7 +1145,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "    var buf = ~wfFrozenBuffers[key];\n"
                "    var oldPath = ~wfFrozenBufferPaths[key];\n"
                "    var makeSynth = { |loaded|\n"
-               "        var synth = Synth(\\wfFrozenPlayer, [\\buf, loaded, \\gate, 1, \\fade, ~wfAttack, \\wfVol, ~wfVolumes[key] ? 1, \\wfPan, ~wfPans[key] ? 0, \\wfLow, ~wfBandLows[key] ? 20, \\wfHigh, ~wfBandHighs[key] ? 20000, \\wfMasterGain, ~wfMasterGain, \\replyId, ~wfMeterIdFor.(key)]);\n"
+               "        var synth = Synth(\\wfFrozenPlayer, [\\buf, loaded, \\gate, 1, \\fade, ~wfAttack, \\wfVol, ~wfVolumes[key] ? 1, \\wfPan, ~wfPans[key] ? 0, \\wfLow, ~wfBandLows[key] ? 20, \\wfHigh, ~wfBandHighs[key] ? 20000, \\wfSlope, ~wfBandSlopes[key] ? 0, \\wfMasterGain, ~wfMasterGain, \\replyId, ~wfMeterIdFor.(key)]);\n"
                "        ~wfObjects[key] = synth;\n"
                "        synth;\n"
                "    };\n"
@@ -1507,7 +1520,7 @@ juce::String SuperColliderHost::makeBridgeScript() const
                "OSCdef(\\wfVolume, { |msg| ~wfSetVolume.(msg[1].asString.asSymbol, msg[2].asFloat); }, '/wf/volume');\n"
                "OSCdef(\\wfMix, { |msg| ~wfSetMix.(msg[1].asString.asSymbol, msg[2].asFloat, msg[3].asFloat); }, '/wf/mix');\n"
                "OSCdef(\\wfAutomation, { |msg| ~wfSetAutomation.(msg[1].asString.asSymbol, msg[2].asString.asSymbol, msg[3].asInteger != 0, msg[4].asString); }, '/wf/automation');\n"
-               "OSCdef(\\wfBand, { |msg| ~wfSetBand.(msg[1].asString.asSymbol, msg[2].asFloat, msg[3].asFloat); }, '/wf/band');\n"
+               "OSCdef(\\wfBand, { |msg| ~wfSetBand.(msg[1].asString.asSymbol, msg[2].asFloat, msg[3].asFloat, msg[4].asInteger); }, '/wf/band');\n"
                "OSCdef(\\wfMasterGain, { |msg| ~wfSetMasterGain.(msg[1].asFloat); }, '/wf/masterGain');\n"
                "OSCdef(\\wfStop, { |msg| ~wfStop.(msg[1].asString.asSymbol, msg[2].asFloat); }, '/wf/stop');\n"
                "OSCdef(\\wfStopAll, { ~wfStopAll.(); }, '/wf/stopAll');\n"
@@ -1571,15 +1584,11 @@ void SuperColliderHost::sendExportCommand (const juce::String& audioPath, double
         const auto clippedState = juce::jmax (0, startState);
         const auto format = (sampleFormat == "int24" || sampleFormat == "float") ? sampleFormat : juce::String ("int16");
 
-        if (shouldUseCommandFallback())
-            writeCommand ("~wfExport.(" + scStringLiteral (audioPath) + ", "
-                          + scFloatLiteral (duration) + ", "
-                          + scFloatLiteral (clippedRate) + ", "
-                          + juce::String (clippedState) + ", "
-                          + scStringLiteral (format) + ");\n");
-
-        if (oscConnected)
-            oscSender.send ("/wf/export", audioPath, static_cast<float> (duration), static_cast<float> (clippedRate), clippedState, format);
+        writeCommand ("~wfExport.(" + scStringLiteral (audioPath) + ", "
+                      + scFloatLiteral (duration) + ", "
+                      + scFloatLiteral (clippedRate) + ", "
+                      + juce::String (clippedState) + ", "
+                      + scStringLiteral (format) + ");\n");
     }
 
 void SuperColliderHost::sendRecordOutputCommand (const juce::String& audioPath, double durationSeconds, const juce::String& sampleFormat)
@@ -1587,22 +1596,14 @@ void SuperColliderHost::sendRecordOutputCommand (const juce::String& audioPath, 
         const auto duration = juce::jlimit (1.0, 1800.0, durationSeconds);
         const auto format = (sampleFormat == "int24" || sampleFormat == "float") ? sampleFormat : juce::String ("int16");
 
-        if (shouldUseCommandFallback())
-            writeCommand ("~wfRecordOutput.(" + scStringLiteral (audioPath) + ", "
-                          + scFloatLiteral (duration) + ", "
-                          + scStringLiteral (format) + ");\n");
-
-        if (oscConnected)
-            oscSender.send ("/wf/recordOutput", audioPath, static_cast<float> (duration), format);
+        writeCommand ("~wfRecordOutput.(" + scStringLiteral (audioPath) + ", "
+                      + scFloatLiteral (duration) + ", "
+                      + scStringLiteral (format) + ");\n");
     }
 
 void SuperColliderHost::sendCancelExportCommand()
     {
-        if (shouldUseCommandFallback())
-            writeCommand ("~wfCancelExport.();\n");
-
-        if (oscConnected)
-            oscSender.send ("/wf/cancelExport");
+        writeCommand ("~wfCancelExport.();\n");
     }
 
 void SuperColliderHost::sendPlayCommand(const juce::String& laneId)
@@ -1723,18 +1724,20 @@ void SuperColliderHost::sendAutomationCommand (const juce::String& laneId, const
             oscSender.send ("/wf/automation", laneId, parameter, enabled, expression);
     }
 
-void SuperColliderHost::sendBandCommand (const juce::String& laneId, double lowHz, double highHz)
+void SuperColliderHost::sendBandCommand (const juce::String& laneId, double lowHz, double highHz, int slopeMode)
     {
         const auto low = juce::jlimit (20.0, 19900.0, lowHz);
         const auto high = juce::jlimit (low + 5.0, 20000.0, highHz);
+        const auto slope = juce::jlimit (0, 2, slopeMode);
 
         if (shouldUseCommandFallback())
             writeCommand ("~wfSetBand.(" + scSymbolLiteral (laneId) + ", "
                           + scFloatLiteral (low) + ", "
-                          + scFloatLiteral (high) + ");\n");
+                          + scFloatLiteral (high) + ", "
+                          + juce::String (slope) + ");\n");
 
         if (oscConnected)
-            oscSender.send ("/wf/band", laneId, static_cast<float> (low), static_cast<float> (high));
+            oscSender.send ("/wf/band", laneId, static_cast<float> (low), static_cast<float> (high), slope);
     }
 
 void SuperColliderHost::setMasterGain (float gain)
@@ -1793,10 +1796,14 @@ void SuperColliderHost::writeCommand(const juce::String& command)
             return;
 
         auto serial = juce::String (++commandSerial).paddedLeft ('0', 8);
-        auto file = commandDirectory.getChildFile ("command-"
-                    + juce::String::toHexString (juce::Time::currentTimeMillis())
-                    + "-" + serial + ".scd");
-        file.replaceWithText (command);
+        const auto stem = "command-"
+                        + juce::String::toHexString (juce::Time::currentTimeMillis())
+                        + "-" + serial;
+        auto tempFile = commandDirectory.getChildFile (stem + ".tmp");
+        auto file = commandDirectory.getChildFile (stem + ".scd");
+
+        if (tempFile.replaceWithText (command))
+            tempFile.moveFileTo (file);
     }
 
 void SuperColliderHost::shutdown()

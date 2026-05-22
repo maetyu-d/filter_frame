@@ -44,7 +44,7 @@ public:
     ~SuperColliderHost();
 
     void play (Lane& lane, const juce::String& sclangPath);
-    void playInBand (Lane& lane, const juce::String& sclangPath, double lowHz, double highHz);
+    void playInBand (Lane& lane, const juce::String& sclangPath, double lowHz, double highHz, int slopeMode);
     bool prepare (Lane& lane, const juce::String& sclangPath);
     int prepareData (const LaneSnapshot& lane, const juce::String& sclangPath);
     bool freezeLane (Lane& lane, const juce::String& sclangPath, double durationSeconds, const juce::File& outputFile);
@@ -63,7 +63,7 @@ public:
     void setLaneMix (Lane& lane);
     void setLaneEffectiveVolume (const Lane& lane, float volume);
     void setLaneEffectiveMix (const Lane& lane, float volume);
-    void setLaneBand (const Lane& lane, double lowHz, double highHz);
+    void setLaneBand (const Lane& lane, double lowHz, double highHz, int slopeMode);
     void stop (Lane& lane, double releaseSeconds = musicalReleaseSeconds);
     void transition (const std::vector<Lane*>& lanesToStop,
                      const std::vector<Lane*>& lanesToStart,
@@ -105,7 +105,7 @@ private:
     void sendVolumeCommand (const juce::String& laneId, float volume);
     void sendMixCommand (const juce::String& laneId, float volume, float pan);
     void sendAutomationCommand (const juce::String& laneId, const Lane::Automation& automation);
-    void sendBandCommand (const juce::String& laneId, double lowHz, double highHz);
+    void sendBandCommand (const juce::String& laneId, double lowHz, double highHz, int slopeMode);
     void sendMasterGainCommand (float gain);
     void sendStopCommand (const juce::String& laneId, double releaseSeconds);
     void sendStopAllCommand();

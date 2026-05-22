@@ -6336,6 +6336,7 @@ struct AudioExportSettings
     int cycles = 1;
     double customSeconds = 30.0;
     double tailSeconds = 2.0;
+    double sampleRate = 0.0;
     juce::String sampleFormat = "int16";
 
     bool operator== (const AudioExportSettings& other) const
@@ -6344,6 +6345,7 @@ struct AudioExportSettings
             && cycles == other.cycles
             && std::abs (customSeconds - other.customSeconds) < 0.001
             && std::abs (tailSeconds - other.tailSeconds) < 0.001
+            && std::abs (sampleRate - other.sampleRate) < 0.001
             && sampleFormat == other.sampleFormat;
     }
 
@@ -6746,6 +6748,8 @@ public:
         addAndMakeVisible (customEditor);
         addAndMakeVisible (tailLabel);
         addAndMakeVisible (tailEditor);
+        addAndMakeVisible (rateLabel);
+        addAndMakeVisible (rateEditor);
         addAndMakeVisible (formatLabel);
         addAndMakeVisible (formatBox);
         addAndMakeVisible (destinationLabel);
@@ -6759,7 +6763,7 @@ public:
         title.setFont (juce::FontOptions (21.0f, juce::Font::bold));
         title.setColour (juce::Label::textColourId, ink());
 
-        for (auto* label : { &rangeLabel, &cyclesLabel, &customLabel, &tailLabel, &formatLabel, &destinationLabel })
+        for (auto* label : { &rangeLabel, &cyclesLabel, &customLabel, &tailLabel, &rateLabel, &formatLabel, &destinationLabel })
         {
             label->setFont (juce::FontOptions (12.0f, juce::Font::bold));
             label->setColour (juce::Label::textColourId, mutedInk());
@@ -6770,16 +6774,19 @@ public:
         cyclesLabel.setText ("Cycles", juce::dontSendNotification);
         customLabel.setText ("Duration", juce::dontSendNotification);
         tailLabel.setText ("Tail", juce::dontSendNotification);
+        rateLabel.setText ("Rate", juce::dontSendNotification);
         formatLabel.setText ("Format", juce::dontSendNotification);
         destinationLabel.setText ("Destination", juce::dontSendNotification);
 
         configureEditor (cyclesEditor);
         configureEditor (customEditor);
         configureEditor (tailEditor);
+        configureEditor (rateEditor);
         configureEditor (destinationEditor);
         cyclesEditor.setInputRestrictions (2, "0123456789");
         customEditor.setInputRestrictions (6, "0123456789.");
         tailEditor.setInputRestrictions (5, "0123456789.");
+        rateEditor.setInputRestrictions (8, "0123456789.");
         destinationEditor.setReadOnly (true);
 
         rangeBox.addItem ("Project cycle", 1);
@@ -6823,9 +6830,11 @@ public:
         customEditor.onFocusLost = [this] { commitFields(); };
         tailEditor.onReturnKey = [this] { commitFields(); };
         tailEditor.onFocusLost = [this] { commitFields(); };
+        rateEditor.onReturnKey = [this] { commitFields(); };
+        rateEditor.onFocusLost = [this] { commitFields(); };
 
         refreshFields();
-        setSize (520, 282);
+        setSize (520, 316);
     }
 
     void paint (juce::Graphics& g) override
@@ -6850,12 +6859,16 @@ public:
         customLabel.setBounds (rangeRow.removeFromLeft (62).reduced (0, 5));
         customEditor.setBounds (rangeRow.removeFromLeft (64).reduced (0, 4));
 
+        auto timingRow = area.removeFromTop (34);
+        tailLabel.setBounds (timingRow.removeFromLeft (78).reduced (0, 5));
+        tailEditor.setBounds (timingRow.removeFromLeft (64).reduced (0, 4));
+        timingRow.removeFromLeft (16);
+        rateLabel.setBounds (timingRow.removeFromLeft (58).reduced (0, 5));
+        rateEditor.setBounds (timingRow.removeFromLeft (92).reduced (0, 4));
+
         auto formatRow = area.removeFromTop (34);
-        tailLabel.setBounds (formatRow.removeFromLeft (78).reduced (0, 5));
-        tailEditor.setBounds (formatRow.removeFromLeft (64).reduced (0, 4));
-        formatRow.removeFromLeft (16);
-        formatLabel.setBounds (formatRow.removeFromLeft (58).reduced (0, 5));
-        formatBox.setBounds (formatRow.removeFromLeft (164).reduced (0, 4));
+        formatLabel.setBounds (formatRow.removeFromLeft (78).reduced (0, 5));
+        formatBox.setBounds (formatRow.removeFromLeft (198).reduced (0, 4));
 
         auto destinationRow = area.removeFromTop (36);
         destinationLabel.setBounds (destinationRow.removeFromLeft (78).reduced (0, 5));
@@ -6913,6 +6926,7 @@ private:
         cyclesEditor.setText (juce::String (settings.cycles), false);
         customEditor.setText (juce::String (settings.customSeconds, 1), false);
         tailEditor.setText (juce::String (settings.tailSeconds, 1), false);
+        rateEditor.setText (settings.sampleRate <= 0.0 ? juce::String() : juce::String (settings.sampleRate, 0), false);
         formatBox.setSelectedItemIndex (formatIndexFor (settings.sampleFormat), juce::dontSendNotification);
         destinationEditor.setText (outputFile.getFullPathName(), false);
         refreshDuration();
@@ -6933,6 +6947,7 @@ private:
         settings.cycles = juce::jlimit (1, 16, cyclesEditor.getText().getIntValue() <= 0 ? 1 : cyclesEditor.getText().getIntValue());
         settings.customSeconds = juce::jlimit (1.0, 1800.0, customEditor.getText().getDoubleValue() <= 0.0 ? 30.0 : customEditor.getText().getDoubleValue());
         settings.tailSeconds = juce::jlimit (0.0, 60.0, tailEditor.getText().getDoubleValue());
+        settings.sampleRate = rateEditor.getText().trim().isEmpty() ? 0.0 : juce::jlimit (8000.0, 384000.0, rateEditor.getText().getDoubleValue());
         settings.sampleFormat = formatForIndex (formatBox.getSelectedItemIndex());
         refreshFields();
     }
@@ -6975,6 +6990,8 @@ private:
     juce::TextEditor customEditor;
     juce::Label tailLabel;
     juce::TextEditor tailEditor;
+    juce::Label rateLabel;
+    juce::TextEditor rateEditor;
     juce::Label formatLabel;
     juce::ComboBox formatBox;
     juce::Label destinationLabel;
@@ -7001,7 +7018,7 @@ public:
                                                    std::move (exportRequested),
                                                    [this] { setVisible (false); }), true);
         setResizable (false, false);
-        centreWithSize (520, 282);
+        centreWithSize (520, 316);
     }
 
     void closeButtonPressed() override
@@ -7022,6 +7039,7 @@ public:
     std::function<void()> onNewProject;
     std::function<void()> onSimpleDemo;
     std::function<void()> onComplexDemo;
+    std::function<void()> onOvalDemo;
     std::function<void()> onContinue;
     std::function<void()> onLoad;
     std::function<void(int)> onRecentProject;
@@ -7034,6 +7052,7 @@ public:
         addAndMakeVisible (newProjectButton);
         addAndMakeVisible (simpleButton);
         addAndMakeVisible (complexButton);
+        addAndMakeVisible (ovalButton);
         addAndMakeVisible (continueButton);
         addAndMakeVisible (loadButton);
 
@@ -7055,12 +7074,14 @@ public:
         newProjectButton.setButtonText ("New");
         simpleButton.setButtonText ("Simple Demo");
         complexButton.setButtonText ("Complex Demo");
+        ovalButton.setButtonText ("Oval Demo");
         continueButton.setButtonText ("Continue");
         loadButton.setButtonText ("Load");
 
         newProjectButton.onClick = [this] { if (onNewProject) onNewProject(); };
         simpleButton.onClick = [this] { if (onSimpleDemo) onSimpleDemo(); };
         complexButton.onClick = [this] { if (onComplexDemo) onComplexDemo(); };
+        ovalButton.onClick = [this] { if (onOvalDemo) onOvalDemo(); };
         continueButton.onClick = [this] { if (onContinue) onContinue(); };
         loadButton.onClick = [this] { if (onLoad) onLoad(); };
 
@@ -7138,6 +7159,8 @@ public:
         simpleButton.setBounds (secondActions.removeFromLeft (actionWidth).reduced (0, 2));
         secondActions.removeFromLeft (8);
         complexButton.setBounds (secondActions.removeFromLeft (actionWidth).reduced (0, 2));
+        secondActions.removeFromLeft (8);
+        ovalButton.setBounds (secondActions.removeFromLeft (actionWidth).reduced (0, 2));
 
         panel.removeFromTop (12);
         recentTitle.setBounds (panel.removeFromTop (24));
@@ -7160,6 +7183,7 @@ private:
     juce::TextButton newProjectButton;
     juce::TextButton simpleButton;
     juce::TextButton complexButton;
+    juce::TextButton ovalButton;
     juce::TextButton continueButton;
     juce::TextButton loadButton;
     std::array<juce::TextButton, 4> recentButtons;
@@ -7219,6 +7243,8 @@ public:
         addAndMakeVisible (bandSpanMinus);
         addAndMakeVisible (bandSpanEditor);
         addAndMakeVisible (bandSpanPlus);
+        addAndMakeVisible (bandSlopeLabel);
+        addAndMakeVisible (bandSlopeBox);
         addAndMakeVisible (stateTempoLabel);
         addAndMakeVisible (stateTempoEditor);
         addAndMakeVisible (stateMeterLabel);
@@ -7285,6 +7311,20 @@ public:
         bandSpanEditor.onFocusLost = [this] { commitBandSpanEditor(); };
         bandSpanMinus.onClick = [this] { adjustSelectedBandSpan (-1); };
         bandSpanPlus.onClick = [this] { adjustSelectedBandSpan (1); };
+        bandSlopeLabel.setText ("Slope", juce::dontSendNotification);
+        bandSlopeLabel.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+        bandSlopeLabel.setColour (juce::Label::textColourId, mutedInk());
+        bandSlopeBox.addItem ("Current", 1);
+        bandSlopeBox.addItem ("1/2", 2);
+        bandSlopeBox.addItem ("1/4", 3);
+        bandSlopeBox.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff111318));
+        bandSlopeBox.setColour (juce::ComboBox::textColourId, ink());
+        bandSlopeBox.setColour (juce::ComboBox::outlineColourId, hairline());
+        bandSlopeBox.onChange = [this]
+        {
+            if (workspaceMode == WorkspaceMode::filterbank)
+                setSelectedBandSlopeMode (bandSlopeBox.getSelectedItemIndex());
+        };
         freezeStatusLabel.setFont (juce::FontOptions (11.5f, juce::Font::bold));
         freezeStatusLabel.setColour (juce::Label::textColourId, mutedInk());
         freezeStatusLabel.setJustificationType (juce::Justification::centredLeft);
@@ -7523,6 +7563,9 @@ public:
 
         host.onStatusChanged = [this] (const juce::String& status)
         {
+            if (exportInProgress)
+                return;
+
             statusLabel.setText (status, juce::dontSendNotification);
         };
 
@@ -8316,7 +8359,7 @@ public:
                 {
                     host.setLaneEffectiveMix (lane, effectiveFilterbankVolume (lane));
                     primeMeterForLane (lane);
-                    host.playInBand (lane, getSclangPathOverride(), band.lowHz, filterbank.highHzForBandSpan (band));
+                    host.playInBand (lane, getSclangPathOverride(), band.lowHz, filterbank.highHzForBandSpan (band), band.slopeMode);
                 }
 
                 refreshControls();
@@ -8356,6 +8399,11 @@ public:
         {
             welcome.setVisible (false);
             newProject (FilterbankDemo::complex);
+        };
+        welcome.onOvalDemo = [this]
+        {
+            welcome.setVisible (false);
+            newProject (FilterbankDemo::oval);
         };
         welcome.onContinue = [this]
         {
@@ -8574,7 +8622,11 @@ public:
 
     void exportAudio()
     {
-        exportWindow = std::make_unique<AudioExportWindow> (exportSettings,
+        auto settingsForDialog = exportSettings;
+        if (workspaceMode == WorkspaceMode::filterbank && settingsForDialog.range == "cycle")
+            settingsForDialog.range = "custom";
+
+        exportWindow = std::make_unique<AudioExportWindow> (settingsForDialog,
                                                             defaultAudioExportFile(),
                                                             [safeThis = juce::Component::SafePointer<MainComponent> (this)] (const AudioExportSettings& settings)
                                                             {
@@ -8685,6 +8737,7 @@ public:
         settings.cycles = juce::jlimit (1, 16, settings.cycles <= 0 ? 1 : settings.cycles);
         settings.customSeconds = juce::jlimit (1.0, 1800.0, settings.customSeconds <= 0.0 ? 30.0 : settings.customSeconds);
         settings.tailSeconds = juce::jlimit (0.0, 60.0, settings.tailSeconds);
+        settings.sampleRate = settings.sampleRate <= 0.0 ? 0.0 : juce::jlimit (8000.0, 384000.0, settings.sampleRate);
         if (settings.sampleFormat != "int24" && settings.sampleFormat != "float")
             settings.sampleFormat = "int16";
 
@@ -8892,6 +8945,9 @@ public:
         bandSpanMinus.setBounds (bandSpanRow.removeFromLeft (28).reduced (2, 4));
         bandSpanEditor.setBounds (bandSpanRow.removeFromLeft (42).reduced (2, 4));
         bandSpanPlus.setBounds (bandSpanRow.removeFromLeft (28).reduced (2, 4));
+        bandSpanRow.removeFromLeft (10);
+        bandSlopeLabel.setBounds (bandSpanRow.removeFromLeft (42).reduced (2, 4));
+        bandSlopeBox.setBounds (bandSpanRow.removeFromLeft (92).reduced (2, 4));
         auto stateTimingRow = statePaneInner.removeFromTop (34);
         stateTempoLabel.setBounds (stateTimingRow.removeFromLeft (54).reduced (2, 4));
         stateTempoEditor.setBounds (stateTimingRow.removeFromLeft (66).reduced (2, 4));
@@ -9463,6 +9519,15 @@ private:
         if (exportRecordingFilterbankOutput)
             stopFilterbank();
         exportRecordingFilterbankOutput = false;
+        if (restoreScAudioSettingsAfterExport)
+        {
+            host.setAudioSettings (scAudioSettingsBeforeExport);
+            scAudioDiagnostics = {};
+            if (settingsWindow != nullptr)
+                settingsWindow->setScDiagnostics (scAudioDiagnostics);
+            invalidatePreparedAudio();
+        }
+        restoreScAudioSettingsAfterExport = false;
         audioJobRunning = false;
         exportInProgress = false;
         exportCancelRequested = false;
@@ -9483,11 +9548,20 @@ private:
 
         exportElapsedSeconds = juce::jlimit (0.0, 1800.0, static_cast<double> (getOscFloat (message[1])));
         exportTotalSeconds = juce::jlimit (1.0, 1800.0, static_cast<double> (getOscFloat (message[2])));
-        statusLabel.setText ("Exporting " + juce::String (exportElapsedSeconds, 1)
-                             + " / " + juce::String (exportTotalSeconds, 1) + "s",
-                             juce::dontSendNotification);
+        lastExportProgressMs = juce::Time::getMillisecondCounterHiRes();
+        updateExportStatusLabel();
         if (arrangementViewMode > 0)
             arrangementStrip.setMachine (machine, rateSlider.getValue(), arrangementViewMode == 2, exportInProgress, exportElapsedSeconds, exportTotalSeconds);
+    }
+
+    void updateExportStatusLabel()
+    {
+        const auto total = juce::jlimit (1.0, 1800.0, exportTotalSeconds);
+        const auto elapsed = juce::jlimit (0.0, total, exportElapsedSeconds);
+        const auto remaining = juce::jmax (0.0, total - elapsed);
+        statusLabel.setText ("Exporting WAV | " + juce::String (remaining, 1) + "s left | "
+                             + juce::String (elapsed, 1) + " / " + juce::String (total, 1) + "s",
+                             juce::dontSendNotification);
     }
 
     void handleAudioDiagnosticsMessage (const juce::OSCMessage& message)
@@ -9569,7 +9643,8 @@ private:
         int outs = 0;
         if (parseScAudioDiagnostics (scAudioDiagnostics, rate, buffer, outs))
             compactStatus = formatCompactScAudioStatus (rate, buffer, outs);
-        statusLabel.setText (compactStatus, juce::dontSendNotification);
+        if (! exportInProgress)
+            statusLabel.setText (compactStatus, juce::dontSendNotification);
         if (settingsWindow != nullptr)
             settingsWindow->setScDiagnostics (scAudioDiagnostics);
     }
@@ -9602,6 +9677,39 @@ private:
 
         tickVisualScheduler (now);
         tickFilterbankScheduler (now);
+        checkAudioExportWatchdog (now);
+    }
+
+    void checkAudioExportWatchdog (double now)
+    {
+        if (! exportInProgress)
+            return;
+
+        const auto timeoutMs = exportElapsedSeconds > 0.0 ? 12000.0 : 20000.0;
+        if (now - lastExportProgressMs < timeoutMs)
+            return;
+
+        host.cancelExport();
+        if (exportRecordingFilterbankOutput)
+            stopFilterbank();
+        exportRecordingFilterbankOutput = false;
+        if (restoreScAudioSettingsAfterExport)
+        {
+            host.setAudioSettings (scAudioSettingsBeforeExport);
+            scAudioDiagnostics = {};
+            if (settingsWindow != nullptr)
+                settingsWindow->setScDiagnostics (scAudioDiagnostics);
+            invalidatePreparedAudio();
+        }
+        restoreScAudioSettingsAfterExport = false;
+        audioJobRunning = false;
+        exportInProgress = false;
+        exportCancelRequested = false;
+        exportElapsedSeconds = 0.0;
+        exportTotalSeconds = 0.0;
+        statusLabel.setText ("Audio export stalled", juce::dontSendNotification);
+        appendLog ("Audio export stalled: no SuperCollider progress for " + juce::String (timeoutMs / 1000.0, 0) + "s");
+        refreshControls();
     }
 
     float getOscFloat (const juce::OSCArgument& argument) const
@@ -9739,6 +9847,8 @@ private:
         object->setProperty ("exportCycles", exportSettings.cycles);
         object->setProperty ("exportCustomSeconds", exportSettings.customSeconds);
         object->setProperty ("exportTailSeconds", exportSettings.tailSeconds);
+        object->setProperty ("exportSampleRate", exportSettings.sampleRate);
+        object->setProperty ("exportSampleRateExplicit", exportSettings.sampleRate > 0.0);
         object->setProperty ("exportSampleFormat", exportSettings.sampleFormat);
         object->setProperty ("masterGain", masterGainSlider.getValue());
 
@@ -9786,12 +9896,16 @@ private:
         exportSettings.cycles = juce::jlimit (1, 16, static_cast<int> (parsed.getProperty ("exportCycles", 1)));
         exportSettings.customSeconds = juce::jlimit (1.0, 1800.0, static_cast<double> (parsed.getProperty ("exportCustomSeconds", 30.0)));
         exportSettings.tailSeconds = juce::jlimit (0.0, 60.0, static_cast<double> (parsed.getProperty ("exportTailSeconds", 2.0)));
+        const auto hasExplicitSampleRate = static_cast<bool> (parsed.getProperty ("exportSampleRateExplicit", false));
+        exportSettings.sampleRate = hasExplicitSampleRate ? static_cast<double> (parsed.getProperty ("exportSampleRate", 0.0)) : 0.0;
+        exportSettings.sampleRate = exportSettings.sampleRate <= 0.0 ? 0.0 : juce::jlimit (8000.0, 384000.0, exportSettings.sampleRate);
         exportSettings.sampleFormat = parsed.getProperty ("exportSampleFormat", "int16").toString();
         if (exportSettings.sampleFormat != "int24" && exportSettings.sampleFormat != "float")
             exportSettings.sampleFormat = "int16";
         if (! loadingProjectInternally)
         {
-            const auto masterGain = juce::jlimit (0.0, 1.5, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
+            const auto savedMasterGain = static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue()));
+            const auto masterGain = savedMasterGain <= 0.0 ? 0.1 : juce::jlimit (0.0, 1.5, savedMasterGain);
             masterGainSlider.setValue (masterGain, juce::dontSendNotification);
             host.setMasterGain (static_cast<float> (masterGain));
         }
@@ -10079,7 +10193,6 @@ private:
         auto object = new juce::DynamicObject();
         object->setProperty ("viewMode", filterbankViewModeToProjectString (filterbank.viewMode));
         object->setProperty ("selectedBand", filterbank.selectedBand);
-
         juce::Array<juce::var> bands;
         for (const auto& band : filterbank.bands)
         {
@@ -10089,6 +10202,7 @@ private:
             bandObject->setProperty ("lowHz", band.lowHz);
             bandObject->setProperty ("highHz", band.highHz);
             bandObject->setProperty ("bandSpan", band.bandSpan);
+            bandObject->setProperty ("slopeMode", band.slopeMode);
             bandObject->setProperty ("octaveGroup", band.octaveGroup);
             bandObject->setProperty ("syncToFilterbankClock", band.syncToFilterbankClock);
             bandObject->setProperty ("resetOnSync", band.resetOnSync);
@@ -10236,7 +10350,8 @@ private:
         rateSlider.setValue (juce::jlimit (0.2, 4.0, rate), juce::dontSendNotification);
         if (! loadingProjectInternally)
         {
-            const auto masterGain = juce::jlimit (0.0, 1.5, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
+            const auto savedMasterGain = static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue()));
+            const auto masterGain = savedMasterGain <= 0.0 ? 0.1 : juce::jlimit (0.0, 1.5, savedMasterGain);
             masterGainSlider.setValue (masterGain, juce::dontSendNotification);
             host.setMasterGain (static_cast<float> (masterGain));
         }
@@ -10262,7 +10377,6 @@ private:
         filterbank.viewMode = filterbankViewModeFromProjectString (value.getProperty ("viewMode", "octave").toString());
         filterbank.selectedBand = juce::jlimit (0, filterbank.getBandCount() - 1,
                                                 static_cast<int> (value.getProperty ("selectedBand", filterbank.selectedBand)));
-
         if (auto* bandsArray = value.getProperty ("bands", {}).getArray())
         {
             for (const auto& bandVar : *bandsArray)
@@ -10277,6 +10391,7 @@ private:
                 band.lowHz = static_cast<double> (bandVar.getProperty ("lowHz", band.lowHz));
                 band.highHz = static_cast<double> (bandVar.getProperty ("highHz", band.highHz));
                 band.bandSpan = juce::jlimit (1, filterbank.maxSpanForBand (band.index), static_cast<int> (bandVar.getProperty ("bandSpan", band.bandSpan)));
+                band.slopeMode = juce::jlimit (0, 2, static_cast<int> (bandVar.getProperty ("slopeMode", band.slopeMode)));
                 band.octaveGroup = static_cast<int> (bandVar.getProperty ("octaveGroup", band.octaveGroup));
                 band.syncToFilterbankClock = static_cast<bool> (bandVar.getProperty ("syncToFilterbankClock", band.syncToFilterbankClock));
                 band.resetOnSync = static_cast<bool> (bandVar.getProperty ("resetOnSync", band.resetOnSync));
@@ -10545,7 +10660,8 @@ private:
         rateSlider.setValue (juce::jlimit (0.2, 4.0, rate), juce::dontSendNotification);
         if (! loadingProjectInternally)
         {
-            const auto masterGain = juce::jlimit (0.0, 1.5, static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue())));
+            const auto savedMasterGain = static_cast<double> (parsed.getProperty ("masterGain", masterGainSlider.getValue()));
+            const auto masterGain = savedMasterGain <= 0.0 ? 0.1 : juce::jlimit (0.0, 1.5, savedMasterGain);
             masterGainSlider.setValue (masterGain, juce::dontSendNotification);
             host.setMasterGain (static_cast<float> (masterGain));
         }
@@ -10674,6 +10790,9 @@ private:
 
     double exportDurationSeconds (const AudioExportSettings& settings) const
     {
+        if (workspaceMode == WorkspaceMode::filterbank && settings.range != "custom")
+            return juce::jlimit (1.0, 1800.0, settings.customSeconds);
+
         const auto rate = juce::jmax (0.05, rateSlider.getValue());
         auto musicalSeconds = 0.0;
 
@@ -10723,8 +10842,17 @@ private:
     {
         if (audioJobRunning.exchange (true))
         {
-            statusLabel.setText ("Audio busy", juce::dontSendNotification);
-            return;
+            if (exportInProgress)
+            {
+                statusLabel.setText ("Audio busy", juce::dontSendNotification);
+                return;
+            }
+
+            audioPrepareRevision.fetch_add (1);
+            prepareQueued = false;
+            prepareQueuedStartAfter = false;
+            resetAudioBeforePrepare = true;
+            audioJobRunning = true;
         }
 
         fsmRunning = false;
@@ -10734,6 +10862,24 @@ private:
         runButton.setButtonText ("Run");
 
         const auto duration = exportDurationSeconds();
+        const auto exportSampleRate = exportSettings.sampleRate <= 0.0 ? 0.0 : juce::jlimit (8000.0, 384000.0, exportSettings.sampleRate);
+        if (exportSampleRate > 0.0 && std::abs (scAudioSettings.sampleRate - exportSampleRate) > 0.001)
+        {
+            restoreScAudioSettingsAfterExport = true;
+            scAudioSettingsBeforeExport = scAudioSettings;
+            auto exportAudioSettings = scAudioSettingsBeforeExport;
+            exportAudioSettings.sampleRate = exportSampleRate;
+            host.setAudioSettings (exportAudioSettings);
+            scAudioDiagnostics = {};
+            if (settingsWindow != nullptr)
+                settingsWindow->setScDiagnostics (scAudioDiagnostics);
+            invalidatePreparedAudio();
+        }
+        else
+        {
+            restoreScAudioSettingsAfterExport = false;
+        }
+
         const auto rate = rateSlider.getValue();
         const auto startState = machine.selectedState;
         const auto sampleFormat = exportSettings.sampleFormat;
@@ -10746,8 +10892,10 @@ private:
         exportCancelRequested = false;
         exportElapsedSeconds = 0.0;
         exportTotalSeconds = duration;
+        exportStartedMs = juce::Time::getMillisecondCounterHiRes();
+        lastExportProgressMs = exportStartedMs;
         exportOutputPath = outputFile.getFullPathName();
-        statusLabel.setText ("Exporting WAV", juce::dontSendNotification);
+        updateExportStatusLabel();
 
         auto safeThis = juce::Component::SafePointer<MainComponent> (this);
         juce::Thread::launch ([safeThis, outputFile, duration, rate, startState, sampleFormat, path, recordingFilterbank]
@@ -11244,6 +11392,21 @@ private:
         refreshControls();
     }
 
+    void setSelectedBandSlopeMode (int newMode)
+    {
+        auto& band = filterbank.selectedBandRef();
+        newMode = juce::jlimit (0, 2, newMode);
+        bandSlopeBox.setSelectedItemIndex (newMode, juce::dontSendNotification);
+
+        if (newMode == band.slopeMode)
+            return;
+
+        band.slopeMode = newMode;
+        setBandForMachineLanes (band);
+        markMachineDirty();
+        refreshControls();
+    }
+
     void commitStateTimingEditors()
     {
         auto& inspected = workspaceMode == WorkspaceMode::filterbank ? filterbank.selectedMachineRef()
@@ -11492,6 +11655,9 @@ private:
             juce::MessageManager::callAsync ([safeThis, lanes, preparedBridge, startAfterPrepare, prepareRevision]
             {
                 if (safeThis == nullptr)
+                    return;
+
+                if (safeThis->exportInProgress)
                     return;
 
                 safeThis->audioJobRunning = false;
@@ -11984,18 +12150,18 @@ private:
 
     void setBandForMachineLanes (FilterBand& band)
     {
-        setBandForMachineLanesRecursive (band.machine, band.lowHz, filterbank.highHzForBandSpan (band));
+        setBandForMachineLanesRecursive (band.machine, band.lowHz, filterbank.highHzForBandSpan (band), band.slopeMode);
     }
 
-    void setBandForMachineLanesRecursive (MachineModel& model, double lowHz, double highHz)
+    void setBandForMachineLanesRecursive (MachineModel& model, double lowHz, double highHz, int slopeMode)
     {
         for (auto& state : model.states)
         {
             for (auto& lane : state.lanes)
-                host.setLaneBand (lane, lowHz, highHz);
+                host.setLaneBand (lane, lowHz, highHz, slopeMode);
 
             if (auto* child = model.childMachine (state.index))
-                setBandForMachineLanesRecursive (*child, lowHz, highHz);
+                setBandForMachineLanesRecursive (*child, lowHz, highHz, slopeMode);
         }
     }
 
@@ -12036,7 +12202,7 @@ private:
         auto& state = model.state (stateIndex);
         for (auto& lane : state.lanes)
         {
-            host.setLaneBand (lane, band.lowHz, filterbank.highHzForBandSpan (band));
+            host.setLaneBand (lane, band.lowHz, filterbank.highHzForBandSpan (band), band.slopeMode);
             host.setLaneEffectiveMix (lane, effectiveFilterbankVolume (lane));
             if (shouldPlayFilterbankLane (lane))
                 lanesToStart.push_back (&lane);
@@ -12754,6 +12920,8 @@ private:
         bandSpanMinus.setVisible (false);
         bandSpanEditor.setVisible (false);
         bandSpanPlus.setVisible (false);
+        bandSlopeLabel.setVisible (false);
+        bandSlopeBox.setVisible (false);
         stateMeterLabel.setVisible (true);
         stateMeterBeatsEditor.setVisible (true);
         stateMeterSlashLabel.setVisible (true);
@@ -12931,6 +13099,7 @@ private:
         stateSummaryLabel.setText (displayHzForUi (std::sqrt (band.lowHz * bandHighHz)) + " | " + displayHzRangeForUi (band.lowHz, bandHighHz)
                                       + " | group " + juce::String (band.octaveGroup + 1)
                                       + " | " + juce::String (bandSpan) + (bandSpan == 1 ? " band" : " bands")
+                                      + " | " + filterBandSlopeModeName (band.slopeMode) + " slope"
                                       + " | " + state.name
                                       + " | " + juce::String (state.lanes.size()) + (state.lanes.size() == 1 ? " lane" : " lanes")
                                       + (lane.playing ? " | active" : ""),
@@ -12943,6 +13112,8 @@ private:
         bandSpanMinus.setVisible (true);
         bandSpanEditor.setVisible (true);
         bandSpanPlus.setVisible (true);
+        bandSlopeLabel.setVisible (true);
+        bandSlopeBox.setVisible (true);
         stateMeterLabel.setVisible (true);
         stateMeterBeatsEditor.setVisible (true);
         stateMeterSlashLabel.setVisible (true);
@@ -12987,6 +13158,7 @@ private:
         bandSpanEditor.setText (juce::String (bandSpan), false);
         bandSpanMinus.setEnabled (bandSpan > 1);
         bandSpanPlus.setEnabled (bandSpan < filterbank.maxSpanForBand (band.index));
+        bandSlopeBox.setSelectedItemIndex (juce::jlimit (0, 2, band.slopeMode), juce::dontSendNotification);
         stateTempoEditor.setText (juce::String (state.tempoBpm, 1), false);
         stateMeterBeatsEditor.setText (juce::String (state.beatsPerBar), false);
         stateMeterUnitEditor.setText (juce::String (state.beatUnit), false);
@@ -13152,6 +13324,8 @@ private:
     juce::TextButton bandSpanMinus;
     juce::TextEditor bandSpanEditor;
     juce::TextButton bandSpanPlus;
+    juce::Label bandSlopeLabel;
+    juce::ComboBox bandSlopeBox;
     juce::Label stateTempoLabel;
     juce::TextEditor stateTempoEditor;
     juce::Label stateMeterLabel;
@@ -13211,8 +13385,11 @@ private:
     bool exportInProgress = false;
     bool exportCancelRequested = false;
     bool exportRecordingFilterbankOutput = false;
+    bool restoreScAudioSettingsAfterExport = false;
     double exportElapsedSeconds = 0.0;
     double exportTotalSeconds = 0.0;
+    double exportStartedMs = 0.0;
+    double lastExportProgressMs = 0.0;
     juce::String exportOutputPath;
     InspectorMode inspectorMode = InspectorMode::tracks;
     int rulesPaneWidth = 500;
@@ -13259,6 +13436,7 @@ private:
     bool suppressUndoCapture = false;
     bool colourblindSafeMode = false;
     SuperColliderAudioSettings scAudioSettings;
+    SuperColliderAudioSettings scAudioSettingsBeforeExport;
     AudioExportSettings exportSettings;
     juce::String lastProjectSnapshot;
     std::vector<juce::String> undoSnapshots;
@@ -13282,7 +13460,7 @@ class WfApplication final : public juce::JUCEApplication,
 {
 public:
     const juce::String getApplicationName() override { return "ff::"; }
-    const juce::String getApplicationVersion() override { return "0.1.0"; }
+    const juce::String getApplicationVersion() override { return "0.2.1"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise (const juce::String&) override

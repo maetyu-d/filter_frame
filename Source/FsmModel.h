@@ -134,7 +134,8 @@ enum class FilterbankViewMode
 enum class FilterbankDemo
 {
     simple,
-    complex
+    complex,
+    oval
 };
 
 class MachineModel
@@ -543,12 +544,23 @@ struct FilterBand
     double lowHz = 20.0;
     double highHz = 25.0;
     int bandSpan = 1;
+    int slopeMode = 0;
     int octaveGroup = 0;
     MachineModel machine;
     bool syncToFilterbankClock = true;
     bool resetOnSync = false;
     double nextStateDueMs = 0.0;
 };
+
+inline juce::String filterBandSlopeModeName (int mode)
+{
+    switch (juce::jlimit (0, 2, mode))
+    {
+        case 1: return "1/2";
+        case 2: return "1/4";
+        default: return "Current";
+    }
+}
 
 enum class FilterbankInteractionType
 {
@@ -711,7 +723,8 @@ private:
             + "    var active = EnvGen.kr(Env.asr(fade, 1, fade), gate);\n"
             + "    var tempo = (~wfTempoHz ? 1).max(0.05);\n"
             + "    var clock = Impulse.kr(tempo * " + density + ", 0.0);\n"
-            + "    var step = PulseCount.kr(clock) + " + rotate + ";\n";
+            + "    var step = PulseCount.kr(clock) + " + rotate + ";\n"
+            + "    var sig, cut, pan, shaped, stereo;\n";
 
         if (role == "drone")
         {
@@ -722,7 +735,7 @@ private:
               "    var fold = SinOsc.kr(" + slowB + ").range(0.72, 1.18);\n"
               "    var tone = SinOsc.ar((" + base + " * [0.5, 1.0] * drift * [1, fold]).clip(" + low + ", " + high + "), 0, [0.13, 0.10]).sum;\n"
               "    var air = BPF.ar(PinkNoise.ar(0.018), LFNoise1.kr(" + slowA + ").range(" + low + ", " + high + "), 0.030);\n"
-              "    var sig = Pan2.ar((tone + air) * 0.18, SinOsc.kr(" + slowB + ").range(-0.32, 0.32));\n";
+              "    sig = Pan2.ar((tone + air) * 0.18, SinOsc.kr(" + slowB + ").range(-0.32, 0.32));\n";
         }
         else if (role == "sub")
         {
@@ -731,7 +744,7 @@ private:
               "    var trig = clock * Demand.kr(clock, 0, pat);\n"
               "    var env = Decay2.kr(trig, 0.004, 0.18);\n"
               "    var pitch = Demand.kr(trig, 0, Dseq([0,0,7,0, 10,7,0,-5], inf));\n"
-              "    var sig = SinOsc.ar((" + base + " * (2 ** (pitch / 12))).clip(" + low + ", " + high + ")) * env * 0.30;\n";
+              "    sig = SinOsc.ar((" + base + " * (2 ** (pitch / 12))).clip(" + low + ", " + high + ")) * env * 0.30;\n";
         }
         else if (role == "pulse")
         {
@@ -739,7 +752,7 @@ private:
               "    var pat = Dseq([1,0,1,0, 1,1,0,0, 1,0,0,1, 0,1,0,0], inf);\n"
               "    var trig = clock * Demand.kr(clock, 0, pat);\n"
               "    var env = Decay2.kr(trig, 0.002, 0.09);\n"
-              "    var sig = RLPF.ar(VarSaw.ar(" + base + " * [0.5, 1.0], 0, 0.30).sum, " + base + " * (1.4 + env * 5), 0.26) * env * 0.18;\n";
+              "    sig = RLPF.ar(VarSaw.ar(" + base + " * [0.5, 1.0], 0, 0.30).sum, " + base + " * (1.4 + env * 5), 0.26) * env * 0.18;\n";
         }
         else if (role == "body")
         {
@@ -748,7 +761,7 @@ private:
               "    var trig = clock * Demand.kr(clock, 0, pat);\n"
               "    var env = Decay2.kr(trig, 0.003, 0.13);\n"
               "    var hit = BPF.ar(WhiteNoise.ar(0.32), " + base + " * Demand.kr(trig, 0, Dseq([0.9, 1.1, 1.4, 0.75], inf)), 0.20);\n"
-              "    var sig = (hit + SinOsc.ar(" + base + " * 0.5) * env * 0.12) * env * 0.32;\n";
+              "    sig = (hit + SinOsc.ar(" + base + " * 0.5) * env * 0.12) * env * 0.32;\n";
         }
         else if (role == "weave")
         {
@@ -757,7 +770,7 @@ private:
               "    var trig = clock * Demand.kr(clock, 0, pat);\n"
               "    var env = Decay2.kr(trig, 0.006, 0.16);\n"
               "    var note = Demand.kr(trig, 0, Dseq([0, 3, 7, 10, 14, 10, 7, 3], inf));\n"
-              "    var sig = Pulse.ar((" + base + " * (2 ** (note / 12))).clip(" + low + ", " + high + "), 0.38) * env * 0.13;\n";
+              "    sig = Pulse.ar((" + base + " * (2 ** (note / 12))).clip(" + low + ", " + high + "), 0.38) * env * 0.13;\n";
         }
         else if (role == "glass")
         {
@@ -766,7 +779,7 @@ private:
               "    var trig = clock * Demand.kr(clock, 0, pat);\n"
               "    var env = Decay2.kr(trig, 0.002, 0.30);\n"
               "    var freq = Demand.kr(trig, 0, Dseq([1, 1.25, 1.5, 2, 1.75, 1.33], inf)) * " + base + ";\n"
-              "    var sig = Ringz.ar(HPF.ar(WhiteNoise.ar(0.055), " + low + "), freq.clip(" + low + ", " + high + "), 0.15).tanh * env * 0.22;\n";
+              "    sig = Ringz.ar(HPF.ar(WhiteNoise.ar(0.055), " + low + "), freq.clip(" + low + ", " + high + "), 0.15).tanh * env * 0.22;\n";
         }
         else
         {
@@ -774,12 +787,12 @@ private:
               "    var pat = Dseq([1,0,0,0, 0,0,1,0, 0,1,0,0, 0,0,0,1], inf);\n"
               "    var trig = clock * Demand.kr(clock, 0, pat);\n"
               "    var env = Decay2.kr(trig, 0.010, 0.45);\n"
-              "    var sig = BPF.ar(PinkNoise.ar(0.13), LFNoise2.kr(0.8).range(" + low + ", " + high + "), 0.10) * env * 0.28;\n";
+              "    sig = BPF.ar(PinkNoise.ar(0.13), LFNoise2.kr(0.8).range(" + low + ", " + high + "), 0.10) * env * 0.28;\n";
         }
 
         script +=
-            "    var shaped = HPF.ar(LPF.ar(sig, " + high + "), " + low + ");\n"
-            "    var stereo = Splay.ar(shaped, 0.36);\n"
+            "    shaped = HPF.ar(LPF.ar(sig, " + high + "), " + low + ");\n"
+            "    stereo = Splay.ar(shaped, 0.36);\n"
             "    LeakDC.ar(Limiter.ar(stereo, 0.34, 0.018)) * active * vol * 0.74;\n"
             "}.play;\n"
             ")\n";
@@ -792,6 +805,93 @@ private:
             && (stateIndex == 3
             || stateIndex == 8
             || ((bandIndex + stateIndex) % 11 == 0));
+    }
+
+    static juce::String ovalBandScript (const juce::String& role, int stateIndex, int laneIndex, double lowHz, double highHz)
+    {
+        const auto centre = std::sqrt (lowHz * highHz);
+        const auto base = juce::String (centre, 4);
+        const auto low = juce::String (lowHz, 4);
+        const auto high = juce::String (highHz, 4);
+        const auto density = juce::String (juce::jlimit (1, 2, 1 + ((stateIndex + laneIndex) % 2)));
+        const auto rotate = juce::String ((stateIndex * 3 + laneIndex * 5) % 16);
+        const auto jitter = juce::String (0.18 + 0.045 * static_cast<double> ((stateIndex + laneIndex) % 6), 3);
+        const auto decay = juce::String (5.8 + 0.72 * static_cast<double> ((stateIndex + laneIndex) % 5), 3);
+
+        auto script = juce::String()
+            + "(\n"
+            + "{ |gate=1, fade=0.02, vol=1|\n"
+            + "    var active = EnvGen.kr(Env.asr(fade, 1, fade), gate);\n"
+            + "    var tempo = (~wfTempoHz ? 1).max(0.05);\n"
+            + "    var clock = Impulse.kr(tempo * " + density + ", 0.0);\n"
+            + "    var step = PulseCount.kr(clock) + " + rotate + ";\n"
+            + "    var sig;\n";
+
+        if (role == "smear")
+        {
+            script +=
+              "    var trig = Dust.kr(tempo * 0.035) + (clock * Demand.kr(clock, 0, Dseq([1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0], inf)));\n"
+              "    var env = Decay2.kr(trig.clip(0, 1), 1.15, 9.8).clip(0, 1);\n"
+              "    var note = Demand.kr(trig.clip(0, 1), 0, Dseq([-12, -7, -5, 0, 4, 7, 11, 9, 7, 4, 2, -2], inf));\n"
+              "    var freq = Lag.kr((" + base + " * (2 ** (note / 12))).clip(" + low + ", " + high + "), 1.80);\n"
+              "    var drift = LFNoise1.kr(" + jitter + ").range(0.991, 1.010);\n"
+              "    var chord = (SinOsc.ar(freq * [0.5, 1] * drift, 0, [0.090, 0.128]).sum\n"
+              "        + VarSaw.ar(freq * [0.5, 1.001, 1.498] * drift, 0, [0.50, 0.54, 0.42], [0.088, 0.128, 0.034]).sum\n"
+              "        + Pulse.ar(freq * 0.501 * drift, 0.53, 0.048)).tanh;\n"
+              "    var fuzz = LPF.ar(BrownNoise.ar(0.055) + PinkNoise.ar(0.040), " + high + ") * env;\n"
+              "    var smear = AllpassC.ar((chord * env) + (Ringz.ar(fuzz, freq, 0.72) * 0.28), 0.420, LFNoise1.kr(" + jitter + ").range(0.085, 0.340), 8.5);\n"
+              "    sig = ((smear * 1.34) + (chord * env * 0.72)).tanh;\n";
+        }
+        else if (role == "tone")
+        {
+            script +=
+              "    var trig = clock * Demand.kr(clock, 0, Dseq([1,0,0,0, 0,0,0,0, 0,1,0,0, 0,0,0,0], inf));\n"
+              "    var env = Decay2.kr(trig, 0.90, " + decay + ").clip(0, 1);\n"
+              "    var note = Demand.kr(trig, 0, Dseq([-12, -5, 0, 4, 7, 11, 14, 16, 14, 11, 7, 4, 2, -2], inf));\n"
+              "    var freq = Lag.kr((" + base + " * (2 ** (note / 12))).clip(" + low + ", " + high + "), 1.35);\n"
+              "    var bend = LFNoise1.kr(" + jitter + ").range(0.990, 1.011);\n"
+              "    var tone = SinOsc.ar(freq * bend * [0.5, 1, 1.002], 0, [0.064, 0.128, 0.092]).sum;\n"
+              "    var buzz = VarSaw.ar(freq * bend * [0.5, 1, 1.501], 0, LFNoise1.kr(" + jitter + ").range(0.40, 0.60), [0.068, 0.118, 0.034]).sum;\n"
+              "    var wool = RLPF.ar(PinkNoise.ar(0.055), freq * LFNoise1.kr(0.08).range(0.75, 1.6), 0.28) * env;\n"
+              "    sig = ((tone + buzz + wool) * env * 1.45).tanh;\n"
+              "    sig = sig + Ringz.ar(LPF.ar(BrownNoise.ar(0.020), " + high + "), freq, 0.65) * env * 0.20;\n"
+              "    sig = CombC.ar(sig, 0.460, LFNoise1.kr(" + jitter + ").range(0.080, 0.360), 7.5) + sig;\n";
+        }
+        else if (role == "dust")
+        {
+            script +=
+              "    var gatePat = Demand.kr(clock, 0, Dseq([1,0,0,0, 0,0,0,0, 0,1,0,0, 0,0,0,0], inf));\n"
+              "    var trig = (clock * gatePat) + Dust.kr(tempo * " + juce::String (0.018 + 0.012 * static_cast<double> (laneIndex + 1), 3) + ");\n"
+              "    var env = Decay2.kr(trig.clip(0, 1), 0.55, " + decay + ").clip(0, 1);\n"
+              "    var note = Demand.kr(trig.clip(0, 1), 0, Dseq([-12, -5, 0, 3, 7, 10, 14, 12, 10, 7, 3, 0], inf));\n"
+              "    var freq = Lag.kr((" + base + " * (2 ** (note / 12))).clip(" + low + ", " + high + "), 1.10);\n"
+              "    var clicks = BPF.ar(PinkNoise.ar(0.060), freq, 0.24) * Decay2.kr(trig.clip(0, 1), 0.120, 1.20);\n"
+              "    var buzz = VarSaw.ar(freq * [0.5, 1, 1.5], 0, LFNoise1.kr(" + jitter + ").range(0.35, 0.65), [0.058, 0.082, 0.030]).sum * env;\n"
+              "    sig = Ringz.ar(clicks, freq, 0.82) + SinOsc.ar(freq * [0.5, 1], 0, [0.060, 0.096]).sum * env + buzz;\n"
+              "    sig = AllpassC.ar(sig.tanh, 0.340, LFNoise1.kr(" + jitter + ").range(0.040, 0.260), 6.2) + sig;\n";
+        }
+        else
+        {
+            script +=
+              "    var trig = clock * Demand.kr(clock, 0, Dseq([1,0,0,0, 0,0,0,0, 0,1,0,0, 0,0,0,0], inf));\n"
+              "    var env = Decay2.kr(trig, 0.80, " + decay + ").clip(0, 1);\n"
+              "    var note = Demand.kr(trig, 0, Dseq([-12, -10, -7, -3, 0, 2, 5, 9, 7, 5, 2, 0, -3], inf));\n"
+              "    var freq = Lag.kr((" + base + " * (2 ** (note / 12))).clip(" + low + ", " + high + "), 1.45);\n"
+              "    var held = LPF.ar(Latch.ar(ClipNoise.ar(0.10), trig), " + high + ") * Decay2.kr(trig, 0.080, 0.90);\n"
+              "    var comb = CombC.ar(held, 0.300, LFNoise0.kr(" + jitter + ").range(0.025, 0.190), 4.8);\n"
+              "    var body = SinOsc.ar(freq * [0.5, 1, 1.5], 0, [0.058, 0.118, 0.030]).sum;\n"
+              "    var buzz = Pulse.ar(freq * [0.5, 1.002, 1.506], LFNoise1.kr(" + jitter + ").range(0.42, 0.58), [0.054, 0.078, 0.024]).sum;\n"
+              "    sig = ((body + buzz).tanh * env * 1.38) + comb + BPF.ar(held, freq, 0.140);\n"
+              "    sig = AllpassC.ar(sig, 0.410, LFNoise1.kr(" + jitter + ").range(0.060, 0.310), 6.8) + sig;\n";
+        }
+
+        script +=
+            "    sig = (sig * 1.55).tanh + (RLPF.ar(sig, LFNoise1.kr(" + jitter + ").exprange(" + low + ", " + high + "), 0.24) * 0.22);\n"
+            "    sig = LPF.ar(sig, " + high + " * 0.86);\n"
+            "    LeakDC.ar(Limiter.ar(Pan2.ar(HPF.ar(sig, " + low + "), LFNoise1.kr(" + juce::String (0.035 + 0.015 * static_cast<double> ((stateIndex + laneIndex) % 4), 3) + ").range(-0.34, 0.34)), 0.32, 0.060)) * active * vol * 0.86;\n"
+            "}.play;\n"
+            ")\n";
+        return script;
     }
 
     static void configureBandMachine (MachineModel& machine, int bandIndex, const juce::String& bandName, double lowHz, double highHz)
@@ -848,6 +948,8 @@ private:
 
         if (demoToUse == FilterbankDemo::complex)
             configureComplexDemo();
+        else if (demoToUse == FilterbankDemo::oval)
+            configureOvalDemo();
         else
             configureSimpleDemo();
 
@@ -913,6 +1015,32 @@ private:
         selectedBand = 11;
     }
 
+    void configureOvalDemo()
+    {
+        interactions.clear();
+        for (auto& band : bands)
+        {
+            band.syncToFilterbankClock = true;
+            band.resetOnSync = false;
+            band.bandSpan = 1;
+            setMachineEnabled (band.machine, false);
+        }
+
+        configureOvalBand (3, "Sub cantus", true, true, 34.0, "smear", 2);
+        configureOvalBand (6, "Low phrase", true, false, 38.0, "tone", 2);
+        configureOvalBand (9, "Dust melody", true, false, 41.0, "dust", 1);
+        configureOvalBand (12, "Slow loop", true, false, 44.0, "skip", 2);
+        configureOvalBand (15, "Warm answer", false, false, 47.0, "tone", 1);
+
+        interactions.push_back ({ 3, 12, FilterbankInteractionType::sync, 0.82f, "sub locks loop" });
+        interactions.push_back ({ 6, 9, FilterbankInteractionType::bias, 0.66f, "low leans dust" });
+        interactions.push_back ({ 9, 12, FilterbankInteractionType::trigger, 0.74f, "dust trips loop" });
+        interactions.push_back ({ 12, 15, FilterbankInteractionType::bias, 0.58f, "loop bends answer" });
+        interactions.push_back ({ 15, 3, FilterbankInteractionType::trigger, 0.38f, "answer wakes sub" });
+
+        selectedBand = 12;
+    }
+
     static void setMachineEnabled (MachineModel& machine, bool enabled)
     {
         for (auto& state : machine.states)
@@ -927,6 +1055,69 @@ private:
 
             if (auto* child = machine.childMachine (state.index))
                 setMachineEnabled (*child, enabled);
+        }
+    }
+
+    void configureOvalBand (int bandIndex,
+                            const juce::String& label,
+                            bool sync,
+                            bool reset,
+                            double bpm,
+                            const juce::String& role,
+                            int span)
+    {
+        if (bandIndex < 0 || bandIndex >= static_cast<int> (bands.size()))
+            return;
+
+        auto& band = bands[static_cast<size_t> (bandIndex)];
+        auto& machine = band.machine;
+        machine.setStateCount (6);
+        machine.rules = { { 0, 1, 1.0f }, { 1, 2, 1.0f }, { 1, 4, 0.45f }, { 2, 3, 1.0f },
+                          { 3, 3, 1.35f }, { 3, 4, 0.70f }, { 4, 5, 1.0f }, { 5, 0, 1.0f },
+                          { 5, 2, 0.35f } };
+        machine.selectedState = 0;
+        machine.selectedLane = 0;
+        machine.entryState = 0;
+        band.syncToFilterbankClock = sync;
+        band.resetOnSync = reset;
+        band.bandSpan = juce::jlimit (1, maxSpanForBand (band.index), span);
+
+        for (int stateIndex = 0; stateIndex < machine.getStateCount(); ++stateIndex)
+        {
+            auto& state = machine.state (stateIndex);
+            const auto smearState = stateIndex == 4;
+            const auto dustState = stateIndex == 1 || stateIndex == 5;
+            const auto stateRole = smearState ? juce::String ("smear")
+                                : dustState ? juce::String ("dust")
+                                : (stateIndex == 3 ? juce::String ("tone") : role);
+
+            state.name = label + " " + juce::String (stateIndex + 1);
+            state.tempoBpm = bpm + static_cast<double> (stateIndex % 3);
+            state.beatsPerBar = stateIndex == 2 ? 5 : (stateIndex == 4 ? 6 : 4);
+            state.beatUnit = 4;
+            state.arrangementBars = smearState ? 8 : (stateIndex == 3 ? 6 : 5);
+            state.lanes.clear();
+
+            Lane primary { machine.makeLaneId (stateIndex, 0),
+                           label + " " + stateRole,
+                           ovalBandScript (stateRole, stateIndex, 0, band.lowHz, highHzForBandSpan (band)) };
+            primary.volume = smearState ? 0.38f : 0.42f;
+            primary.gain = 0.82f;
+            primary.enabled = true;
+            state.lanes.push_back (std::move (primary));
+
+            if (stateIndex == 3)
+            {
+                const auto layerRole = stateIndex == 3 ? juce::String ("smear") : juce::String ("tone");
+                Lane layer { machine.makeLaneId (stateIndex, 1),
+                             label + " offset",
+                             ovalBandScript (layerRole, stateIndex, 1, band.lowHz, highHzForBandSpan (band)) };
+                layer.volume = 0.20f;
+                layer.gain = 0.58f;
+                layer.pan = stateIndex % 2 == 0 ? -0.28f : 0.28f;
+                layer.enabled = true;
+                state.lanes.push_back (std::move (layer));
+            }
         }
     }
 
